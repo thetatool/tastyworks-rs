@@ -1,4 +1,8 @@
-use crate::{csv, symbol::OptionSymbol, common::{optional_string_serialize, string_serialize, Date, Decimal, OptionType}};
+use crate::{
+    common::{optional_string_serialize, string_serialize, Date, Decimal, OptionType},
+    csv,
+    symbol::OptionSymbol,
+};
 
 use chrono::{DateTime, FixedOffset};
 use num_rational::Rational64;
@@ -103,8 +107,6 @@ pub mod market_metrics {
     pub struct ExpirationImpliedVolatility {
         #[serde(with = "string_serialize")]
         pub expiration_date: Date,
-        option_chain_type: String,
-        settlement_type: Option<String>,
         #[serde(default, with = "optional_string_serialize")]
         pub implied_volatility: Option<f64>,
     }
