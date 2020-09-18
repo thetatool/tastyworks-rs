@@ -1,6 +1,6 @@
 [package]
 name = "tastyworks"
-version = "0.1.0"
+version = "0.2.0"
 description = "Unofficial Tastyworks API"
 authors = ["Tobias Mansfield-Williams <contact@tmwhere.com>"]
 repository = "https://github.com/thetatool/tastyworks-rs"
