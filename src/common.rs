@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use num_rational::Rational64;
 use num_traits::{Signed, Zero};
 
@@ -101,8 +101,8 @@ impl Default for Decimal {
 pub struct Date(pub NaiveDate);
 
 impl Date {
-    pub fn time_to_expiration(&self) -> Duration {
-        let date_now = Utc::now().naive_utc().date();
+    pub fn time_to_expiration(&self, now: Option<fn() -> DateTime<Utc>>) -> Duration {
+        let date_now = now.unwrap_or(Utc::now)().naive_utc().date();
         self.0 - date_now
     }
 }
