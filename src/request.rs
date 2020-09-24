@@ -71,9 +71,8 @@ pub async fn request(
     };
 
     let base_url = format!("https://api.tastyworks.com/{}", url_path);
-    log::info!("Fetching {}{}", base_url, params_string);
-
     let url = format!("{}{}", base_url, params_string);
+
     let response = CLIENT
         .get(&url)
         .header(header::AUTHORIZATION, api_token_header_value.unwrap())
