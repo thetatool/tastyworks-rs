@@ -126,6 +126,7 @@ pub mod positions {
         pub symbol: String,
         pub quantity: i32,
         pub quantity_direction: QuantityDirection,
+        pub instrument_type: String,
     }
 
     #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -172,6 +173,11 @@ pub mod positions {
                 symbol: csv.symbol,
                 quantity: csv.quantity.abs(),
                 quantity_direction: QuantityDirection::from_signed_quantity(csv.quantity),
+                instrument_type: match csv.instrument_type.as_ref() {
+                    "OPTION" => "Equity Option".to_string(),
+                    "STOCK" => "Equity".to_string(),
+                    _ => unreachable!("Unhandled instrument type: {}", csv.instrument_type),
+                },
             }
         }
     }

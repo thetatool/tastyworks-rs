@@ -12,6 +12,8 @@ use std::str::FromStr;
 pub struct Position {
     #[serde(rename = "Symbol")]
     pub symbol: String,
+    #[serde(rename = "Type")]
+    pub instrument_type: String,
     #[serde(rename = "Quantity", with = "string_serialize")]
     pub quantity: i32,
     #[serde(rename = "Strike Price", with = "string_serialize")]
