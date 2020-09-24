@@ -174,6 +174,7 @@ pub mod positions {
                 quantity: csv.quantity.abs(),
                 quantity_direction: QuantityDirection::from_signed_quantity(csv.quantity),
                 instrument_type: match csv.instrument_type.as_ref() {
+                    // TODO: handle futures and futures options
                     "OPTION" => "Equity Option".to_string(),
                     "STOCK" => "Equity".to_string(),
                     _ => unreachable!("Unhandled instrument type: {}", csv.instrument_type),
