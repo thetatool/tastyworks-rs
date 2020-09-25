@@ -47,7 +47,7 @@ pub async fn request(
                 Ok(json) => {
                     if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
                         let m_str = m.as_str().to_string();
-                        if m_str.len() == 0 {
+                        if m_str.is_empty() {
                             error = Some(TokenMissingError.into());
                         } else {
                             t.replace(Some(m_str));
