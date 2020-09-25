@@ -6,7 +6,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
-const RESTART_MSG: &str = "Restart tastyworks and check that you are logged in.";
+const RESTART_MSG: &str =
+    "Try restarting tastyworks desktop and logging in, even if you are currently logged in.";
 
 lazy_static! {
     static ref CLIENT: Client = Client::builder()
