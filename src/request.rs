@@ -9,6 +9,8 @@ use std::path::PathBuf;
 const RESTART_MSG: &str =
     "Try restarting tastyworks desktop and logging in, even if you are currently logged in.";
 
+const SESSION_ID_KEY: &str = "sessionId";
+
 lazy_static! {
     static ref CLIENT: Client = Client::builder()
         .user_agent(
@@ -33,7 +35,8 @@ pub async fn request(
     API_TOKEN.with(|t| {
         if t.borrow().is_none() {
             lazy_static! {
-                static ref RE: Regex = Regex::new(r#""sessionId"\s*:\s*"([^"]+)"#).unwrap();
+                static ref RE: Regex =
+                    Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
             }
 
             let mut path = dirs::data_local_dir().expect("Undefined config directory");
@@ -43,9 +46,31 @@ pub async fn request(
             match json {
                 Ok(json) => {
                     if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
-                        t.replace(Some(m.as_str().to_string()));
+                        let m_str = m.as_str().to_string();
+                        if m_str.len() == 0 {
+                            error = Some(TokenMissingError.into());
+                        } else {
+                            t.replace(Some(m_str));
+                        }
                     } else {
-                        error = Some(TokenParseError.into());
+                        let line = json.lines().find(|line| line.contains(SESSION_ID_KEY));
+                        if let Some(line) = line {
+                            let start_idx = line.find(SESSION_ID_KEY).unwrap();
+                            let end_idx = start_idx + SESSION_ID_KEY.len();
+                            let obfuscated: String = line
+                                .char_indices()
+                                .map(|(idx, c)| {
+                                    if c.is_alphanumeric() && (idx < start_idx || idx >= end_idx) {
+                                        '*'
+                                    } else {
+                                        c
+                                    }
+                                })
+                                .collect();
+                            panic!("Preferences json regex failed: {}", obfuscated);
+                        } else {
+                            error = Some(SessionKeyMissingError.into());
+                        }
                     }
                 }
                 Err(_) => {
@@ -92,13 +117,24 @@ pub async fn request(
 }
 
 #[derive(Debug)]
-struct TokenParseError;
+struct TokenMissingError;
 
-impl Error for TokenParseError {}
+impl Error for TokenMissingError {}
 
-impl fmt::Display for TokenParseError {
+impl fmt::Display for TokenMissingError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "API token could not be found. {}", RESTART_MSG)
+    }
+}
+
+#[derive(Debug)]
+struct SessionKeyMissingError;
+
+impl Error for SessionKeyMissingError {}
+
+impl fmt::Display for SessionKeyMissingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Session key could not be found. {}", RESTART_MSG)
     }
 }
 
@@ -111,7 +147,11 @@ impl Error for IOError {}
 
 impl fmt::Display for IOError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error reading file: {}", self.path.display())
+        write!(
+            f,
+            "Error reading file: {}. Ensure that tastyworks desktop is installed.",
+            self.path.display()
+        )
     }
 }
 
