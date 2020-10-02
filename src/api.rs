@@ -350,6 +350,8 @@ pub mod transactions {
 
     #[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
     pub enum TradeAction {
+        Sell,
+        Buy,
         #[serde(rename = "Sell to Open")]
         SellToOpen, // open credit
         #[serde(rename = "Buy to Open")]
@@ -363,6 +365,8 @@ pub mod transactions {
     impl TradeAction {
         pub fn opposing_action(&self) -> Self {
             match self {
+                TradeAction::Sell => TradeAction::Buy,
+                TradeAction::Buy => TradeAction::Sell,
                 TradeAction::SellToOpen => TradeAction::BuyToClose,
                 TradeAction::BuyToOpen => TradeAction::SellToClose,
                 TradeAction::SellToClose => TradeAction::BuyToOpen,
@@ -372,6 +376,8 @@ pub mod transactions {
 
         pub fn opens(&self) -> bool {
             match self {
+                TradeAction::Sell => true,
+                TradeAction::Buy => true,
                 TradeAction::SellToOpen => true,
                 TradeAction::BuyToOpen => true,
                 TradeAction::SellToClose => false,
