@@ -14,73 +14,38 @@ impl<'a> OptionSymbol<'a> {
     }
 
     pub fn quote_symbol(&self) -> String {
-        let (integer_str, decimal_str) = self.price_components();
+        let price = self.price_component();
+        let integer = price[..5].trim_start_matches('0');
+        let decimal = price[5..].trim_end_matches('0');
         format!(
-            ".{}{}{}{}{}{}{}{}",
-            if self.is_future_option_symbol() {
-                "/"
-            } else {
-                ""
-            },
+            ".{}{}{}{}{}{}",
             self.underlying_symbol(),
             self.date_component(),
             self.option_type_component(),
-            integer_str,
-            if decimal_str.is_none() { "" } else { "." },
-            decimal_str.unwrap_or(""),
-            self.future_exchange()
-                .map(|ex| format!(":{}", ex))
-                .unwrap_or_else(|| "".to_string()),
+            integer,
+            if decimal.is_empty() { "" } else { "." },
+            decimal,
         )
     }
 
     fn date_component(&self) -> &str {
-        if self.is_future_option_symbol() {
-            return "";
-        }
-
         let component = self.0.split_whitespace().nth(1);
         let date = component.and_then(|c| c.get(..6));
         date.unwrap_or_else(|| panic!("Missing date component for symbol: {}", self.0))
     }
 
     fn option_type_component(&self) -> char {
-        self.common_slice()
+        self.0
             .split_whitespace()
             .nth(1)
             .and_then(|s| s.chars().nth(6))
             .unwrap_or_else(|| panic!("Missing option type component for symbol: {}", self.0))
     }
 
-    fn price_components(&self) -> (&str, Option<&str>) {
-        let component = self.common_slice().split_whitespace().nth(1);
-        let price = component
-            .and_then(|c| c.get(7..))
-            .unwrap_or_else(|| panic!("Missing price component for symbol: {}", self.0));
-
-        let (integer_str, decimal_str) = if self.is_future_option_symbol() {
-            let mut iter = price.split('.');
-            let integer = iter
-                .next()
-                .unwrap_or_else(|| panic!("Missing price separator for symbol: {}", self.0));
-            let decimal = iter.next().unwrap_or("");
-            (integer, decimal)
-        } else {
-            let integer = &price[..5];
-            let decimal = &price[5..];
-            (integer, decimal)
-        };
-
-        let decimal_str = decimal_str.trim_end_matches('0');
-
-        (
-            integer_str.trim_start_matches('0'),
-            if decimal_str.is_empty() {
-                None
-            } else {
-                Some(decimal_str)
-            },
-        )
+    fn price_component(&self) -> &str {
+        let component = self.0.split_whitespace().nth(1);
+        let price = component.and_then(|c| c.get(7..));
+        price.unwrap_or_else(|| panic!("Missing price component for symbol: {}", self.0))
     }
 
     pub fn expiration_date(&self) -> Date {
@@ -91,7 +56,7 @@ impl<'a> OptionSymbol<'a> {
 
     pub fn underlying_symbol(&self) -> &'a str {
         let underlying_symbol = self
-            .common_slice()
+            .0
             .split_whitespace()
             .next()
             .unwrap_or_else(|| panic!("Missing underlying symbol for symbol: {}", self.0));
@@ -107,69 +72,11 @@ impl<'a> OptionSymbol<'a> {
     }
 
     pub fn strike_price(&self) -> Rational64 {
-        let (integer_str, decimal_str) = self.price_components();
-        let integer =
-            i64::from_str(&format!("{}{:0<3}", integer_str, decimal_str.unwrap_or(""))).unwrap();
-        Rational64::new(integer, 1000)
-    }
-
-    fn common_slice(&self) -> &'a str {
-        if self.is_future_option_symbol() {
-            self.0.splitn(2, ' ').nth(1).unwrap().trim_start()
-        } else {
-            self.0
-        }
-    }
-
-    fn future_symbol(&self) -> Option<&str> {
-        if self.is_future_option_symbol() {
-            self.0.split_whitespace().next().and_then(|c| {
-                let expiry_chars_byte_len = 2; // e.g. Z0
-                c.get(1..c.len() - expiry_chars_byte_len)
-            })
-        } else {
-            None
-        }
-    }
-
-    fn is_future_option_symbol(&self) -> bool {
-        self.0.chars().nth(1).filter(|c| *c == '/').is_some()
-    }
-
-    fn future_exchange(&self) -> Option<&str> {
-        let ex = match self.future_symbol()? {
-            "/ZB" => "XCBT",
-            "/ZN" => "XCBT",
-            "/ZF" => "XCBT",
-            "/ZT" => "XCBT",
-            "/UB" => "XCBT",
-            "/GE" => "XCME",
-            "/6A" => "XCME",
-            "/6B" => "XCME",
-            "/6C" => "XCME",
-            "/6E" => "XCME",
-            "/6J" => "XCME",
-            "/6M" => "XCME",
-            "/ZC" => "XCBT",
-            "/ZS" => "XCBT",
-            "/ZW" => "XCBT",
-            "/HE" => "XCBT",
-            "/CL" => "XNYM",
-            "/NG" => "XNYM",
-            "/GC" => "XCEC",
-            "/SI" => "XCEC",
-            "/HG" => "XCEC",
-            "/ES" => "XCME",
-            "/NQ" => "XCME",
-            "/YM" => "XCBT",
-            "/RTY" => "XCME",
-            "/VX" => "XCBF",
-            "/VXM" => "XCBF",
-            "/BTC" => "XCME",
-            symbol => panic!("Unhandled future: {}", symbol),
-        };
-
-        Some(ex)
+        let price_str = self.price_component();
+        let price = i64::from_str(price_str)
+            .ok()
+            .map(|i| Rational64::new(i, 1000));
+        price.unwrap_or_else(|| panic!("Missing strike price for symbol: {}", self.0))
     }
 }
 
@@ -222,12 +129,6 @@ mod tests {
     fn test_option_symbol_quote_symbol() {
         let quote_symbol = OptionSymbol::from("IQ 200918P00017500").quote_symbol();
         assert_eq!(quote_symbol, ".IQ200918P17.5");
-    }
-
-    #[test]
-    fn test_futures_option_symbol_quote_symbol() {
-        let quote_symbol = OptionSymbol::from("./NGZ0 LNEZ0 201124C4.5").quote_symbol();
-        assert_eq!(quote_symbol, "./LNEZ20C4.5:XNYM");
     }
 
     #[test]
