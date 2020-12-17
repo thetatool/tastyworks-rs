@@ -86,18 +86,18 @@ pub mod market_metrics {
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub symbol: String,
-        implied_volatility_index: String,
-        implied_volatility_index_5_day_change: String,
+        implied_volatility_index: Option<String>,
+        implied_volatility_index_5_day_change: Option<String>,
         implied_volatility_index_rank: Option<String>,
         tos_implied_volatility_index_rank: Option<String>,
-        tw_implied_volatility_index_rank: String,
+        tw_implied_volatility_index_rank: Option<String>,
         tos_implied_volatility_index_rank_updated_at: Option<String>,
         implied_volatility_index_rank_source: Option<String>,
-        implied_volatility_percentile: String,
+        implied_volatility_percentile: Option<String>,
         implied_volatility_updated_at: Option<String>,
         liquidity_value: Option<String>,
         liquidity_rank: Option<String>,
-        liquidity_rating: i32,
+        liquidity_rating: Option<i32>,
         updated_at: String,
         pub option_expiration_implied_volatilities: Option<Vec<ExpirationImpliedVolatility>>,
     }
