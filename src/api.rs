@@ -1,5 +1,5 @@
 use crate::{
-    common::{optional_string_serialize, string_serialize, Date, Decimal, OptionType},
+    common::{optional_string_serialize, string_serialize, Decimal, ExpirationDate, OptionType},
     csv,
     symbol::OptionSymbol,
 };
@@ -106,9 +106,19 @@ pub mod market_metrics {
     #[serde(rename_all = "kebab-case")]
     pub struct ExpirationImpliedVolatility {
         #[serde(with = "string_serialize")]
-        pub expiration_date: Date,
+        pub expiration_date: ExpirationDate,
         #[serde(default, with = "optional_string_serialize")]
         pub implied_volatility: Option<f64>,
+    }
+
+    impl options_common::ExpirationImpliedVolatilityProvider for market_metrics::Item {
+        fn find_iv_for_expiration_date(&self, date: ExpirationDate) -> Option<f64> {
+            self.option_expiration_implied_volatilities
+                .as_ref()?
+                .iter()
+                .find(|eiv| eiv.expiration_date == date)?
+                .implied_volatility
+        }
     }
 }
 
@@ -150,7 +160,7 @@ pub mod positions {
             OptionSymbol::from(&self.symbol).quote_symbol()
         }
 
-        pub fn expiration_date(&self) -> Date {
+        pub fn expiration_date(&self) -> ExpirationDate {
             OptionSymbol::from(&self.symbol).expiration_date()
         }
 
@@ -273,7 +283,7 @@ pub mod transactions {
                     .apply(self.proprietary_index_option_fees.0)
         }
 
-        pub fn expiration_date(&self) -> Date {
+        pub fn expiration_date(&self) -> ExpirationDate {
             OptionSymbol::from(&self.symbol).expiration_date()
         }
 
@@ -322,7 +332,7 @@ pub mod transactions {
             self.value_effect.apply(self.value.0)
         }
 
-        pub fn expiration_date(&self) -> Date {
+        pub fn expiration_date(&self) -> ExpirationDate {
             OptionSymbol::from(&self.symbol).expiration_date()
         }
 

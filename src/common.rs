@@ -1,10 +1,11 @@
-use chrono::{DateTime, Duration, NaiveDate, Utc};
 use num_rational::Rational64;
 use num_traits::{Signed, Zero};
 
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
+
+pub use options_common::{ExpirationDate, OptionType};
 
 const MAX_DECIMAL_POINTS: i64 = 4;
 const DECIMAL_MULTIPLIER: i64 = 10_000; // 10^MAX_DECIMAL_POINTS
@@ -94,48 +95,6 @@ impl fmt::Display for Decimal {
 impl Default for Decimal {
     fn default() -> Self {
         Decimal(Rational64::zero())
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Date(pub NaiveDate);
-
-impl Date {
-    pub fn time_to_expiration(&self, now: Option<fn() -> DateTime<Utc>>) -> Duration {
-        let date_now = now.unwrap_or(Utc::now)().naive_utc().date();
-        self.0 - date_now
-    }
-}
-
-impl FromStr for Date {
-    type Err = chrono::ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Date(NaiveDate::from_str(s)?))
-    }
-}
-
-impl Default for Date {
-    fn default() -> Self {
-        Date(NaiveDate::from_ymd(1, 1, 1))
-    }
-}
-
-impl fmt::Display for Date {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-pub enum OptionType {
-    Call,
-    Put,
-}
-
-impl Default for OptionType {
-    fn default() -> Self {
-        OptionType::Call
     }
 }
 

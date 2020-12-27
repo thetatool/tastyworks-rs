@@ -1,5 +1,5 @@
 use crate::{
-    common::{optional_string_serialize, string_serialize, Date, Decimal, OptionType},
+    common::{optional_string_serialize, string_serialize, Decimal, ExpirationDate, OptionType},
     symbol::{self, OptionSymbol},
 };
 
@@ -27,7 +27,7 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn expiration_date(&self) -> Date {
+    pub fn expiration_date(&self) -> ExpirationDate {
         OptionSymbol::from(&self.symbol).expiration_date()
     }
 
@@ -117,9 +117,9 @@ impl FromStr for TransactionExpiration {
     }
 }
 
-impl From<TransactionExpiration> for Date {
-    fn from(d: TransactionExpiration) -> Date {
-        Date(d.0)
+impl From<TransactionExpiration> for ExpirationDate {
+    fn from(d: TransactionExpiration) -> ExpirationDate {
+        ExpirationDate(d.0)
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::common::{Date, OptionType};
+use crate::common::{ExpirationDate, OptionType};
 
 use chrono::NaiveDate;
 use num_rational::Rational64;
@@ -48,9 +48,11 @@ impl<'a> OptionSymbol<'a> {
         price.unwrap_or_else(|| panic!("Missing price component for symbol: {}", self.0))
     }
 
-    pub fn expiration_date(&self) -> Date {
+    pub fn expiration_date(&self) -> ExpirationDate {
         let date_str = self.date_component();
-        let date = NaiveDate::parse_from_str(date_str, "%y%m%d").ok().map(Date);
+        let date = NaiveDate::parse_from_str(date_str, "%y%m%d")
+            .ok()
+            .map(ExpirationDate);
         date.unwrap_or_else(|| panic!("Missing expiration date for symbol: {}", self.0))
     }
 
