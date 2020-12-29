@@ -62,7 +62,7 @@ pub mod watchlists {
     pub struct Entry {
         pub symbol: String,
         #[serde(alias = "instrument-type")]
-        pub instrument_type: InstrumentType,
+        pub instrument_type: Option<InstrumentType>,
     }
 
     #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]

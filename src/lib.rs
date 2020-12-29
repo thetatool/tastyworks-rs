@@ -22,6 +22,12 @@ pub async fn accounts() -> Result<Vec<accounts::Item>, Box<dyn Error>> {
     Ok(response.data.items)
 }
 
+pub async fn watchlists() -> Result<Vec<watchlists::Item>, Box<dyn Error>> {
+    let response: api::Response<watchlists::Response> =
+        request("watchlists", "").await?.json().await?;
+    Ok(response.data.items)
+}
+
 pub async fn public_watchlists() -> Result<Vec<watchlists::Item>, Box<dyn Error>> {
     let response: api::Response<watchlists::Response> =
         request("public-watchlists", "").await?.json().await?;
