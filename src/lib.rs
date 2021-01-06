@@ -17,20 +17,32 @@ const MAX_SYMBOL_SUMMARY_BATCH_SIZE: usize = 500;
 const PARALLEL_REQUESTS: usize = 10;
 
 pub async fn accounts() -> Result<Vec<accounts::Item>, Box<dyn Error>> {
+    let url = "customers/me/accounts";
     let response: api::Response<accounts::Response> =
-        request("customers/me/accounts", "").await?.json().await?;
+        request(url, "").await?.json().await.map_err(|e| {
+            log::error!("Error deserializing {}: {:?}", url, e);
+            e
+        })?;
     Ok(response.data.items)
 }
 
 pub async fn watchlists() -> Result<Vec<watchlists::Item>, Box<dyn Error>> {
+    let url = "watchlists";
     let response: api::Response<watchlists::Response> =
-        request("watchlists", "").await?.json().await?;
+        request(url, "").await?.json().await.map_err(|e| {
+            log::error!("Error deserializing {}: {:?}", url, e);
+            e
+        })?;
     Ok(response.data.items)
 }
 
 pub async fn public_watchlists() -> Result<Vec<watchlists::Item>, Box<dyn Error>> {
+    let url = "public-watchlists";
     let response: api::Response<watchlists::Response> =
-        request("public-watchlists", "").await?.json().await?;
+        request(url, "").await?.json().await.map_err(|e| {
+            log::error!("Error deserializing {}: {:?}", url, e);
+            e
+        })?;
     Ok(response.data.items)
 }
 
@@ -38,7 +50,11 @@ pub async fn positions(
     account: &accounts::Account,
 ) -> Result<Vec<positions::Item>, Box<dyn Error>> {
     let url = format!("accounts/{}/positions", account.account_number);
-    let response: api::Response<positions::Response> = request(&url, "").await?.json().await?;
+    let response: api::Response<positions::Response> =
+        request(&url, "").await?.json().await.map_err(|e| {
+            log::error!("Error deserializing {}: {:?}", url, e);
+            e
+        })?;
     Ok(response.data.items)
 }
 
@@ -67,8 +83,14 @@ pub async fn transactions(
         "start-date={}&end-date={}&page-offset={}",
         start_date, end_date, page_offset
     );
-    let response: api::Response<transactions::Response> =
-        request(&url, &parameters).await?.json().await?;
+    let response: api::Response<transactions::Response> = request(&url, &parameters)
+        .await?
+        .json()
+        .await
+        .map_err(|e| {
+            log::error!("Error deserializing {}?{}: {:?}", url, parameters, e);
+            e
+        })?;
 
     Ok(Some((response.data.items, response.pagination)))
 }
@@ -113,6 +135,10 @@ pub async fn market_metrics(
 
 pub async fn option_chains(symbol: &str) -> Result<Vec<option_chains::Item>, Box<dyn Error>> {
     let url = format!("option-chains/{}/nested", symbol);
-    let response: api::Response<option_chains::Response> = request(&url, "").await?.json().await?;
+    let response: api::Response<option_chains::Response> =
+        request(&url, "").await?.json().await.map_err(|e| {
+            log::error!("Error deserializing {}: {:?}", url, e);
+            e
+        })?;
     Ok(response.data.items)
 }
