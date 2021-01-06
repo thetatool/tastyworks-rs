@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Response<Data> {
+pub(crate) struct Response<Data> {
     pub data: Data,
     pub pagination: Option<Pagination>,
 }
@@ -35,7 +35,7 @@ pub mod accounts {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
@@ -55,7 +55,7 @@ pub mod watchlists {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
@@ -78,7 +78,7 @@ pub mod market_metrics {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
@@ -137,7 +137,7 @@ pub mod positions {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
@@ -209,7 +209,7 @@ pub mod transactions {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
@@ -525,7 +525,7 @@ pub mod option_chains {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Response {
+    pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
