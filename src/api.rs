@@ -23,6 +23,14 @@ pub struct Pagination {
     pub total_pages: i32,
 }
 
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum InstrumentType {
+    Future,
+    Equity,
+    Index,
+    Unknown,
+}
+
 pub mod accounts {
     use super::*;
 
@@ -61,16 +69,8 @@ pub mod watchlists {
     #[derive(Debug, Serialize, Deserialize)]
     pub struct Entry {
         pub symbol: String,
-        #[serde(alias = "instrument-type")]
+        #[serde(alias = "instrument-type")] // appears as both kebab and snake case
         pub instrument_type: Option<InstrumentType>,
-    }
-
-    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-    pub enum InstrumentType {
-        Future,
-        Equity,
-        Index,
-        Unknown,
     }
 }
 
@@ -518,5 +518,74 @@ pub mod transactions {
                 csv::TradeAction::BuyToClose => Self::BuyToClose,
             }
         }
+    }
+}
+
+pub mod option_chains {
+    use super::*;
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Response {
+        pub items: Vec<Item>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct Item {
+        pub underlying_symbol: String,
+        pub option_chain_type: String,
+        pub shares_per_contract: i32,
+        pub deliverables: Vec<Deliverable>,
+        pub expirations: Vec<Expiration>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct TickSize {
+        #[serde(with = "string_serialize")]
+        pub value: Decimal,
+        #[serde(default, with = "optional_string_serialize")]
+        pub threshold: Option<Decimal>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct Deliverable {
+        pub symbol: Option<String>,
+        pub root_symbol: String,
+        pub deliverable_type: String,
+        pub description: String,
+        #[serde(with = "string_serialize")]
+        pub amount: Decimal,
+        pub instrument_type: Option<InstrumentType>,
+        #[serde(with = "string_serialize")]
+        pub percent: i32,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct Expiration {
+        pub expiration_type: ExpirationType,
+        #[serde(with = "string_serialize")]
+        pub expiration_date: ExpirationDate,
+        pub days_to_expiration: i32,
+        pub settlement_type: String,
+        pub strikes: Vec<ExpirationStrike>,
+    }
+
+    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+    pub enum ExpirationType {
+        Regular,
+        Weekly,
+        Quarterly,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct ExpirationStrike {
+        #[serde(with = "string_serialize")]
+        pub strike_price: Decimal,
+        pub call: String,
+        pub put: String,
     }
 }

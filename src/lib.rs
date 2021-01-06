@@ -110,3 +110,9 @@ pub async fn market_metrics(
 
     Ok(json)
 }
+
+pub async fn option_chains(symbol: &str) -> Result<Vec<option_chains::Item>, Box<dyn Error>> {
+    let url = format!("option-chains/{}/nested", symbol);
+    let response: api::Response<option_chains::Response> = request(&url, "").await?.json().await?;
+    Ok(response.data.items)
+}
