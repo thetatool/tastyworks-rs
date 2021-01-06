@@ -133,7 +133,7 @@ impl Client {
             ))?;
             self.next_message_id += 1;
 
-            // simulate timing of web app
+            // TODO: replace with something more reliable, probably need to handle heartbeat
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
 
