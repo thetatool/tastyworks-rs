@@ -9,6 +9,8 @@ use std::error::Error;
 use std::fmt;
 use url::Url;
 
+const MAX_SUBSCRIPTION_SIZE: usize = 500;
+
 pub struct Client {
     base_url: String,
     access_token: String,
@@ -106,8 +108,9 @@ impl Client {
             return Err(NotConnectedError.into());
         }
 
-        self.send_message(&format!(
-            r#"
+        for chunk in symbols.chunks(MAX_SUBSCRIPTION_SIZE) {
+            self.send_message(&format!(
+                r#"
 [
   {{
     "id": "{id}",
@@ -123,15 +126,16 @@ impl Client {
   }}
 ]
 "#,
-            id = self.next_message_id,
-            client_id = self.client_id.as_ref().unwrap(),
-            name = name,
-            symbols = symbols.iter().map(|s| format!("\"{}\"", s)).join(",")
-        ))?;
-        self.next_message_id += 1;
+                id = self.next_message_id,
+                client_id = self.client_id.as_ref().unwrap(),
+                name = name,
+                symbols = chunk.iter().map(|s| format!("\"{}\"", s)).join(",")
+            ))?;
+            self.next_message_id += 1;
 
-        // simulate timing of web app
-        std::thread::sleep(std::time::Duration::from_millis(200));
+            // simulate timing of web app
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
 
         Ok(())
     }
