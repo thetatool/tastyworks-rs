@@ -10,6 +10,7 @@ const RESTART_MSG: &str =
     "Try restarting tastyworks desktop and logging in, even if you are currently logged in.";
 
 const SESSION_ID_KEY: &str = "sessionId";
+const API_ENV_KEY: &str = "TASTYWORKS_API_TOKEN";
 
 lazy_static! {
     static ref CLIENT: Client = Client::builder()
@@ -34,47 +35,16 @@ pub async fn request(
 
     API_TOKEN.with(|t| {
         if t.borrow().is_none() {
-            lazy_static! {
-                static ref RE: Regex =
-                    Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
-            }
-
-            let mut path = dirs::data_local_dir().expect("Undefined config directory");
-            path.push("tastyworks/desktop/preferences_user.json");
-
-            let json = std::fs::read_to_string(&path);
-            match json {
-                Ok(json) => {
-                    if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
-                        let m_str = m.as_str().to_string();
-                        if m_str.is_empty() {
-                            error = Some(TokenMissingError.into());
-                        } else {
-                            t.replace(Some(m_str));
-                        }
-                    } else {
-                        let line = json.lines().find(|line| line.contains(SESSION_ID_KEY));
-                        if let Some(line) = line {
-                            let start_idx = line.find(SESSION_ID_KEY).unwrap();
-                            let end_idx = start_idx + SESSION_ID_KEY.len();
-                            let obfuscated: String = line
-                                .char_indices()
-                                .map(|(idx, c)| {
-                                    if c.is_alphanumeric() && (idx < start_idx || idx >= end_idx) {
-                                        '*'
-                                    } else {
-                                        c
-                                    }
-                                })
-                                .collect();
-                            panic!("Preferences json regex failed: {}", obfuscated);
-                        } else {
-                            error = Some(SessionKeyMissingError.into());
-                        }
+            if let Ok(token) = std::env::var(API_ENV_KEY) {
+                t.replace(Some(token));
+            } else {
+                match extract_token_from_preferences_file() {
+                    Ok(token) => {
+                        t.replace(Some(token));
                     }
-                }
-                Err(_) => {
-                    error = Some(IOError { path }.into());
+                    Err(e) => {
+                        error = Some(e);
+                    }
                 }
             }
         };
@@ -139,6 +109,23 @@ impl fmt::Display for SessionKeyMissingError {
 }
 
 #[derive(Debug)]
+struct FailedRegexError {
+    obfuscated_line: String,
+}
+
+impl Error for FailedRegexError {}
+
+impl fmt::Display for FailedRegexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Preferences json regex failed on line: {}",
+            self.obfuscated_line
+        )
+    }
+}
+
+#[derive(Debug)]
 struct IOError {
     path: PathBuf,
 }
@@ -149,8 +136,10 @@ impl fmt::Display for IOError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error reading file: {}. Ensure that tastyworks desktop is installed.",
-            self.path.display()
+            "Error reading file: {}. Ensure that tastyworks desktop is installed or define \
+             a valid token in the {} environment variable.",
+            self.path.display(),
+            API_ENV_KEY
         )
     }
 }
@@ -170,5 +159,49 @@ impl fmt::Display for UnauthorizedRequestError {
             "Failed response ({}) to request: {}. {}",
             self.status, self.url, RESTART_MSG
         )
+    }
+}
+
+fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
+    lazy_static! {
+        static ref RE: Regex =
+            Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
+    }
+
+    let mut path = dirs::data_local_dir().expect("Undefined config directory");
+    path.push("tastyworks/desktop/preferences_user.json");
+
+    let json = std::fs::read_to_string(&path);
+    match json {
+        Ok(json) => {
+            if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
+                let m_str = m.as_str();
+                if m_str.is_empty() {
+                    Err(TokenMissingError.into())
+                } else {
+                    Ok(m_str.to_string())
+                }
+            } else {
+                let line = json.lines().find(|line| line.contains(SESSION_ID_KEY));
+                if let Some(line) = line {
+                    let start_idx = line.find(SESSION_ID_KEY).unwrap();
+                    let end_idx = start_idx + SESSION_ID_KEY.len();
+                    let obfuscated_line: String = line
+                        .char_indices()
+                        .map(|(idx, c)| {
+                            if c.is_alphanumeric() && (idx < start_idx || idx >= end_idx) {
+                                '*'
+                            } else {
+                                c
+                            }
+                        })
+                        .collect();
+                    Err(FailedRegexError { obfuscated_line }.into())
+                } else {
+                    Err(SessionKeyMissingError.into())
+                }
+            }
+        }
+        Err(_) => Err(IOError { path }.into()),
     }
 }
