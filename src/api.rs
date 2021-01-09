@@ -533,6 +533,7 @@ pub mod option_chains {
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub underlying_symbol: String,
+        pub root_symbol: String,
         pub option_chain_type: String,
         pub shares_per_contract: i32,
         pub deliverables: Vec<Deliverable>,
