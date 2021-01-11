@@ -6,11 +6,15 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
+const SESSION_ID_KEY: &str = "sessionId";
+const API_ENV_KEY: &str = "TASTYWORKS_API_TOKEN";
+
 const RESTART_MSG: &str =
     "Try restarting tastyworks desktop and logging in, even if you are currently logged in.";
 
-const SESSION_ID_KEY: &str = "sessionId";
-const API_ENV_KEY: &str = "TASTYWORKS_API_TOKEN";
+fn install_msg() -> String {
+    format!("Ensure that tastyworks desktop is installed or define a valid token in the {} environment variable.", API_ENV_KEY)
+}
 
 lazy_static! {
     static ref CLIENT: Client = Client::builder()
@@ -136,11 +140,21 @@ impl fmt::Display for IOError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error reading file: {}. Ensure that tastyworks desktop is installed or define \
-             a valid token in the {} environment variable.",
+            "Error reading file: {}. {}",
             self.path.display(),
-            API_ENV_KEY
+            install_msg()
         )
+    }
+}
+
+#[derive(Debug)]
+struct ConfigDirMissingError;
+
+impl Error for ConfigDirMissingError {}
+
+impl fmt::Display for ConfigDirMissingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Configuration directory not found. {}", install_msg())
     }
 }
 
@@ -168,8 +182,24 @@ fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
             Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
     }
 
-    let mut path = dirs::data_local_dir().expect("Undefined config directory");
-    path.push("tastyworks/desktop/preferences_user.json");
+    let mut path: PathBuf = [dirs::home_dir(), dirs::data_local_dir()]
+        .iter()
+        .flatten()
+        .filter_map(|p| {
+            let mut p = p.to_path_buf();
+            for f in &["tastyworks", ".tastyworks"] {
+                p.push(f);
+                if p.exists() {
+                    return Some(p);
+                }
+                p.pop();
+            }
+            None
+        })
+        .next()
+        .ok_or(ConfigDirMissingError)?;
+
+    path.push("desktop/preferences_user.json");
 
     let json = std::fs::read_to_string(&path);
     match json {
