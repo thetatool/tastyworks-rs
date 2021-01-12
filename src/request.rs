@@ -80,7 +80,7 @@ pub async fn request(
         .await?;
 
     if response.status() != 200 {
-        return Err(UnauthorizedRequestError {
+        return Err(FailedRequestError {
             status: response.status(),
             url,
         }
@@ -91,7 +91,7 @@ pub async fn request(
 }
 
 #[derive(Debug)]
-struct TokenMissingError;
+pub struct TokenMissingError;
 
 impl Error for TokenMissingError {}
 
@@ -102,7 +102,7 @@ impl fmt::Display for TokenMissingError {
 }
 
 #[derive(Debug)]
-struct SessionKeyMissingError;
+pub struct SessionKeyMissingError;
 
 impl Error for SessionKeyMissingError {}
 
@@ -113,7 +113,7 @@ impl fmt::Display for SessionKeyMissingError {
 }
 
 #[derive(Debug)]
-struct FailedRegexError {
+pub struct FailedRegexError {
     obfuscated_line: String,
 }
 
@@ -130,8 +130,8 @@ impl fmt::Display for FailedRegexError {
 }
 
 #[derive(Debug)]
-struct IOError {
-    path: PathBuf,
+pub struct IOError {
+    pub path: PathBuf,
 }
 
 impl Error for IOError {}
@@ -159,18 +159,18 @@ impl fmt::Display for ConfigDirMissingError {
 }
 
 #[derive(Debug)]
-struct UnauthorizedRequestError {
-    status: reqwest::StatusCode,
-    url: String,
+pub struct FailedRequestError {
+    pub status: reqwest::StatusCode,
+    pub url: String,
 }
 
-impl Error for UnauthorizedRequestError {}
+impl Error for FailedRequestError {}
 
-impl fmt::Display for UnauthorizedRequestError {
+impl fmt::Display for FailedRequestError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Failed response ({}) to request: {}. {}",
+            "Failed request ({}) to: {}. {}",
             self.status, self.url, RESTART_MSG
         )
     }
