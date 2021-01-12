@@ -6,6 +6,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::PathBuf;
 
+pub use reqwest::StatusCode;
+
 const SESSION_ID_KEY: &str = "sessionId";
 const API_ENV_KEY: &str = "TASTYWORKS_API_TOKEN";
 
@@ -30,12 +32,83 @@ thread_local! {
     static API_TOKEN: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
 }
 
+#[derive(Debug)]
+pub enum RequestError {
+    TokenMissing,
+    SessionKeyMissing,
+    FailedRegex {
+        obfuscated_line: String,
+    },
+    Io {
+        path: PathBuf,
+    },
+    ConfigDirMissing,
+    Decode {
+        e: reqwest::Error,
+        url: String,
+    },
+    FailedRequest {
+        e: reqwest::Error,
+        url: String,
+    },
+    FailedResponse {
+        status: reqwest::StatusCode,
+        url: String,
+    },
+}
+
+impl Error for RequestError {}
+
+impl fmt::Display for RequestError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::TokenMissing => {
+                write!(f, "API token could not be found. {}", RESTART_MSG)
+            }
+            Self::SessionKeyMissing => {
+                write!(f, "Session key could not be found. {}", RESTART_MSG)
+            }
+            Self::FailedRegex { obfuscated_line } => {
+                write!(
+                    f,
+                    "Preferences json regex failed on line: {}",
+                    obfuscated_line
+                )
+            }
+            Self::Io { path } => {
+                write!(
+                    f,
+                    "Error reading file: {}. {}",
+                    path.display(),
+                    install_msg()
+                )
+            }
+            Self::ConfigDirMissing => {
+                write!(f, "Configuration directory not found. {}", install_msg())
+            }
+            Self::Decode { e, url } => {
+                write!(f, "Error decoding {}. {}", url, e)
+            }
+            Self::FailedRequest { e, url } => {
+                write!(f, "Failed request to {}. {}", url, e)
+            }
+            Self::FailedResponse { status, url } => {
+                write!(
+                    f,
+                    "Failed response ({}) to: {}. {}",
+                    status, url, RESTART_MSG
+                )
+            }
+        }
+    }
+}
+
 pub async fn request(
     url_path: &str,
     params_string: &str,
-) -> Result<reqwest::Response, Box<dyn Error>> {
+) -> Result<reqwest::Response, RequestError> {
     let mut api_token_header_value = None;
-    let mut error: Option<Box<dyn Error>> = None;
+    let mut error: Option<RequestError> = None;
 
     API_TOKEN.with(|t| {
         if t.borrow().is_none() {
@@ -77,106 +150,26 @@ pub async fn request(
         .get(&url)
         .header(header::AUTHORIZATION, api_token_header_value.unwrap())
         .send()
-        .await?;
+        .await;
 
-    if response.status() != 200 {
-        return Err(FailedRequestError {
-            status: response.status(),
-            url,
+    match response {
+        Err(e) => {
+            return Err(RequestError::FailedRequest { e, url });
         }
-        .into());
-    }
-
-    Ok(response)
-}
-
-#[derive(Debug)]
-pub struct TokenMissingError;
-
-impl Error for TokenMissingError {}
-
-impl fmt::Display for TokenMissingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "API token could not be found. {}", RESTART_MSG)
+        Ok(response) => {
+            if response.status() != 200 {
+                return Err(RequestError::FailedResponse {
+                    status: response.status(),
+                    url,
+                });
+            } else {
+                Ok(response)
+            }
+        }
     }
 }
 
-#[derive(Debug)]
-pub struct SessionKeyMissingError;
-
-impl Error for SessionKeyMissingError {}
-
-impl fmt::Display for SessionKeyMissingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Session key could not be found. {}", RESTART_MSG)
-    }
-}
-
-#[derive(Debug)]
-pub struct FailedRegexError {
-    obfuscated_line: String,
-}
-
-impl Error for FailedRegexError {}
-
-impl fmt::Display for FailedRegexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Preferences json regex failed on line: {}",
-            self.obfuscated_line
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct IOError {
-    pub path: PathBuf,
-}
-
-impl Error for IOError {}
-
-impl fmt::Display for IOError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Error reading file: {}. {}",
-            self.path.display(),
-            install_msg()
-        )
-    }
-}
-
-#[derive(Debug)]
-struct ConfigDirMissingError;
-
-impl Error for ConfigDirMissingError {}
-
-impl fmt::Display for ConfigDirMissingError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Configuration directory not found. {}", install_msg())
-    }
-}
-
-#[derive(Debug)]
-pub struct FailedRequestError {
-    pub status: reqwest::StatusCode,
-    pub url: String,
-}
-
-impl Error for FailedRequestError {}
-
-impl fmt::Display for FailedRequestError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Failed request ({}) to: {}. {}",
-            self.status, self.url, RESTART_MSG
-        )
-    }
-}
-
-fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
+fn extract_token_from_preferences_file() -> Result<String, RequestError> {
     lazy_static! {
         static ref RE: Regex =
             Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
@@ -197,7 +190,7 @@ fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
             None
         })
         .next()
-        .ok_or(ConfigDirMissingError)?;
+        .ok_or(RequestError::ConfigDirMissing)?;
 
     path.push("desktop/preferences_user.json");
 
@@ -207,7 +200,7 @@ fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
             if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
                 let m_str = m.as_str();
                 if m_str.is_empty() {
-                    Err(TokenMissingError.into())
+                    Err(RequestError::TokenMissing)
                 } else {
                     Ok(m_str.to_string())
                 }
@@ -226,12 +219,12 @@ fn extract_token_from_preferences_file() -> Result<String, Box<dyn Error>> {
                             }
                         })
                         .collect();
-                    Err(FailedRegexError { obfuscated_line }.into())
+                    Err(RequestError::FailedRegex { obfuscated_line })
                 } else {
-                    Err(SessionKeyMissingError.into())
+                    Err(RequestError::SessionKeyMissing)
                 }
             }
         }
-        Err(_) => Err(IOError { path }.into()),
+        Err(_) => Err(RequestError::Io { path }),
     }
 }
