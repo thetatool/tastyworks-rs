@@ -95,7 +95,7 @@ impl fmt::Display for RequestError {
             Self::FailedResponse { status, url } => {
                 write!(
                     f,
-                    "Failed response ({}) to: {}. {}",
+                    "Failed response ({}) for: {}. {}",
                     status, url, RESTART_MSG
                 )
             }
