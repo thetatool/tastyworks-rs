@@ -571,6 +571,7 @@ pub mod option_chains {
         pub expiration_date: ExpirationDate,
         pub days_to_expiration: i32,
         pub settlement_type: String,
+        #[serde(default)] // strikes property not always present
         pub strikes: Vec<ExpirationStrike>,
     }
 
