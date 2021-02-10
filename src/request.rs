@@ -154,13 +154,16 @@ pub async fn request(
 
     match response {
         Err(e) => {
-            return Err(RequestError::FailedRequest { e, url });
+            return Err(RequestError::FailedRequest {
+                e,
+                url: obfuscate_account_url(&url),
+            });
         }
         Ok(response) => {
             if response.status() != 200 {
                 return Err(RequestError::FailedResponse {
                     status: response.status(),
-                    url,
+                    url: obfuscate_account_url(&url),
                 });
             } else {
                 Ok(response)
@@ -226,5 +229,41 @@ fn extract_token_from_preferences_file() -> Result<String, RequestError> {
             }
         }
         Err(_) => Err(RequestError::Io { path }),
+    }
+}
+
+pub(crate) fn obfuscate_account_url(url: &str) -> String {
+    const ACCOUNTS_STR: &str = "accounts/";
+    if let Some(accounts_byte_idx) = url.find(ACCOUNTS_STR) {
+        let mut ending_separator_found = false;
+        url.char_indices()
+            .map(|(char_byte_idx, ch)| {
+                if char_byte_idx < accounts_byte_idx + ACCOUNTS_STR.len() || ending_separator_found
+                {
+                    ch
+                } else if ch == '/' {
+                    ending_separator_found = true;
+                    ch
+                } else {
+                    '*'
+                }
+            })
+            .collect()
+    } else {
+        url.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_obfuscate_account_url() {
+        assert_eq!(obfuscate_account_url("accounts/123ABC"), "accounts/******");
+        assert_eq!(
+            obfuscate_account_url("foo/accounts/123AB/bar"),
+            "foo/accounts/*****/bar"
+        );
     }
 }

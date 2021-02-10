@@ -51,7 +51,7 @@ pub async fn positions(account: &accounts::Account) -> Result<Vec<positions::Ite
             log::error!("Error deserializing {}: {:?}", url, e);
             RequestError::FailedRequest {
                 e,
-                url: url.to_string(),
+                url: request::obfuscate_account_url(&url),
             }
         })?;
     Ok(response.data.items)
@@ -86,7 +86,7 @@ pub async fn transactions(
         .await?
         .json()
         .await
-        .map_err(|e| map_decode_err(e, &url, Some(&parameters)))?;
+        .map_err(|e| map_decode_err(e, &request::obfuscate_account_url(&url), Some(&parameters)))?;
 
     Ok(Some((response.data.items, response.pagination)))
 }
