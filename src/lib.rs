@@ -2,47 +2,20 @@ use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 
-use std::error::Error;
-use std::fmt;
-
 pub mod api;
 pub mod common;
+mod constants;
 pub mod csv;
+pub mod errors;
 pub mod request;
 pub mod streamer;
 pub mod symbol;
 
-pub use crate::{api::*, common::*, request::*};
+use crate::errors::*;
+pub use crate::{api::*, request::*};
 
 const MAX_SYMBOL_SUMMARY_BATCH_SIZE: usize = 500;
 const PARALLEL_REQUESTS: usize = 10;
-
-#[derive(Debug)]
-pub enum ApiError {
-    Request(RequestError),
-    Decode { e: Box<dyn Error>, url: String },
-}
-
-impl fmt::Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Request(e) => {
-                write!(f, "{}", e)
-            }
-            Self::Decode { e, url } => {
-                write!(f, "Error decoding {}. {}", url, e)
-            }
-        }
-    }
-}
-
-impl Error for ApiError {}
-
-impl From<RequestError> for ApiError {
-    fn from(e: RequestError) -> Self {
-        ApiError::Request(e)
-    }
-}
 
 pub async fn accounts() -> Result<Vec<accounts::Item>, ApiError> {
     let url = "customers/me/accounts";
