@@ -1,5 +1,8 @@
 use crate::{
-    common::{optional_string_serialize, string_serialize, Decimal, ExpirationDate, OptionType},
+    common::{
+        deserialize_integer_or_string_as_decimal, optional_string_serialize, string_serialize,
+        Decimal, ExpirationDate, OptionType,
+    },
     csv,
     symbol::OptionSymbol,
 };
@@ -145,7 +148,10 @@ pub mod positions {
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub symbol: String,
-        #[serde(with = "string_serialize")]
+        #[serde(
+            deserialize_with = "deserialize_integer_or_string_as_decimal",
+            serialize_with = "string_serialize::serialize"
+        )]
         pub quantity: Decimal,
         pub quantity_direction: QuantityDirection,
         pub instrument_type: String,
