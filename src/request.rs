@@ -43,10 +43,6 @@ pub enum RequestError {
         path: PathBuf,
     },
     ConfigDirMissing,
-    Decode {
-        e: reqwest::Error,
-        url: String,
-    },
     FailedRequest {
         e: reqwest::Error,
         url: String,
@@ -85,9 +81,6 @@ impl fmt::Display for RequestError {
             }
             Self::ConfigDirMissing => {
                 write!(f, "Configuration directory not found. {}", install_msg())
-            }
-            Self::Decode { e, url } => {
-                write!(f, "Error decoding {}. {}", url, e)
             }
             Self::FailedRequest { e, url } => {
                 write!(f, "Failed request to {}. {}", url, e)
@@ -232,8 +225,10 @@ fn extract_token_from_preferences_file() -> Result<String, RequestError> {
     }
 }
 
-pub(crate) fn obfuscate_account_url(url: &str) -> String {
+pub(crate) fn obfuscate_account_url(url: impl AsRef<str>) -> String {
     const ACCOUNTS_STR: &str = "accounts/";
+
+    let url = url.as_ref();
     if let Some(accounts_byte_idx) = url.find(ACCOUNTS_STR) {
         let mut ending_separator_found = false;
         url.char_indices()

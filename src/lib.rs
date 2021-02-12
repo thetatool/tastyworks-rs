@@ -2,6 +2,9 @@ use chrono::{DateTime, Utc};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 
+use std::error::Error;
+use std::fmt;
+
 pub mod api;
 pub mod common;
 pub mod csv;
@@ -14,46 +17,58 @@ pub use crate::{api::*, common::*, request::*};
 const MAX_SYMBOL_SUMMARY_BATCH_SIZE: usize = 500;
 const PARALLEL_REQUESTS: usize = 10;
 
-pub async fn accounts() -> Result<Vec<accounts::Item>, RequestError> {
+#[derive(Debug)]
+pub enum ApiError {
+    Request(RequestError),
+    Decode { e: Box<dyn Error>, url: String },
+}
+
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Request(e) => {
+                write!(f, "{}", e)
+            }
+            Self::Decode { e, url } => {
+                write!(f, "Error decoding {}. {}", url, e)
+            }
+        }
+    }
+}
+
+impl Error for ApiError {}
+
+impl From<RequestError> for ApiError {
+    fn from(e: RequestError) -> Self {
+        ApiError::Request(e)
+    }
+}
+
+pub async fn accounts() -> Result<Vec<accounts::Item>, ApiError> {
     let url = "customers/me/accounts";
-    let response: api::Response<accounts::Response> = request(url, "")
-        .await?
-        .json()
-        .await
-        .map_err(|e| map_decode_err(e, url, None))?;
+    let response: api::Response<accounts::Response> =
+        deserialize_response(request(url, "").await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn watchlists() -> Result<Vec<watchlists::Item>, RequestError> {
+pub async fn watchlists() -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "watchlists";
-    let response: api::Response<watchlists::Response> = request(url, "")
-        .await?
-        .json()
-        .await
-        .map_err(|e| map_decode_err(e, url, None))?;
+    let response: api::Response<watchlists::Response> =
+        deserialize_response(request(url, "").await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn public_watchlists() -> Result<Vec<watchlists::Item>, RequestError> {
+pub async fn public_watchlists() -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "public-watchlists";
-    let response: api::Response<watchlists::Response> = request(url, "")
-        .await?
-        .json()
-        .await
-        .map_err(|e| map_decode_err(e, url, None))?;
+    let response: api::Response<watchlists::Response> =
+        deserialize_response(request(url, "").await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn positions(account: &accounts::Account) -> Result<Vec<positions::Item>, RequestError> {
+pub async fn positions(account: &accounts::Account) -> Result<Vec<positions::Item>, ApiError> {
     let url = format!("accounts/{}/positions", account.account_number);
     let response: api::Response<positions::Response> =
-        request(&url, "").await?.json().await.map_err(|e| {
-            log::error!("Error deserializing {}: {:?}", url, e);
-            RequestError::FailedRequest {
-                e,
-                url: request::obfuscate_account_url(&url),
-            }
-        })?;
+        deserialize_response(request(&url, "").await?).await?;
     Ok(response.data.items)
 }
 
@@ -62,7 +77,7 @@ pub async fn transactions(
     start_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     prev_pagination: Option<Pagination>,
-) -> Result<Option<(Vec<transactions::Item>, Option<Pagination>)>, RequestError> {
+) -> Result<Option<(Vec<transactions::Item>, Option<Pagination>)>, ApiError> {
     let page_offset = if let Some(api::Pagination {
         page_offset,
         total_pages,
@@ -82,28 +97,21 @@ pub async fn transactions(
         "start-date={}&end-date={}&page-offset={}",
         start_date, end_date, page_offset
     );
-    let response: api::Response<transactions::Response> = request(&url, &parameters)
-        .await?
-        .json()
-        .await
-        .map_err(|e| map_decode_err(e, &request::obfuscate_account_url(&url), Some(&parameters)))?;
+    let response: api::Response<transactions::Response> =
+        deserialize_response(request(&url, &parameters).await?).await?;
 
     Ok(Some((response.data.items, response.pagination)))
 }
 
-pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::Item>, RequestError> {
+pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::Item>, ApiError> {
     let mut results = stream::iter(symbols.chunks(MAX_SYMBOL_SUMMARY_BATCH_SIZE).map(
         |batch| async move {
             let symbols = batch.iter().cloned().join(",");
 
             let url_path = "market-metrics";
             let params_string = &format!("symbols={}", symbols);
-            let response: Result<api::Response<market_metrics::Response>, RequestError> =
-                request(url_path, params_string)
-                    .await?
-                    .json()
-                    .await
-                    .map_err(|e| map_decode_err(e, url_path, Some(params_string)));
+            let response: Result<api::Response<market_metrics::Response>, ApiError> =
+                deserialize_response(request(url_path, params_string).await?).await;
 
             response
         },
@@ -120,22 +128,30 @@ pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::It
     Ok(json)
 }
 
-pub async fn option_chains(symbol: &str) -> Result<Vec<option_chains::Item>, RequestError> {
+pub async fn option_chains(symbol: &str) -> Result<Vec<option_chains::Item>, ApiError> {
     let url = format!("option-chains/{}/nested", symbol);
-    let response: api::Response<option_chains::Response> = request(&url, "")
-        .await?
-        .json()
-        .await
-        .map_err(|e| map_decode_err(e, &url, None))?;
+    let response: api::Response<option_chains::Response> =
+        deserialize_response(request(&url, "").await?).await?;
     Ok(response.data.items)
 }
 
-fn map_decode_err(e: reqwest::Error, url: &str, params: Option<&str>) -> RequestError {
-    let url_string = if let Some(params) = params {
-        format!("{}?{}", url, params)
-    } else {
-        url.to_string()
-    };
+async fn deserialize_response<T>(response: reqwest::Response) -> Result<T, ApiError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let url = response.url().clone();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| RequestError::FailedRequest {
+            e,
+            url: request::obfuscate_account_url(&url),
+        })?;
 
-    RequestError::Decode { e, url: url_string }
+    let de = &mut serde_json::Deserializer::from_slice(&bytes);
+    let result: Result<T, _> = serde_path_to_error::deserialize(de);
+    result.map_err(|e| ApiError::Decode {
+        e: Box::new(e),
+        url: request::obfuscate_account_url(&url),
+    })
 }
