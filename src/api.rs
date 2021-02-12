@@ -145,7 +145,8 @@ pub mod positions {
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub symbol: String,
-        pub quantity: i32,
+        #[serde(with = "string_serialize")]
+        pub quantity: Decimal,
         pub quantity_direction: QuantityDirection,
         pub instrument_type: String,
     }
@@ -192,7 +193,7 @@ pub mod positions {
         fn from(csv: csv::Position) -> Self {
             Self {
                 symbol: csv.symbol,
-                quantity: csv.quantity.abs(),
+                quantity: Decimal(Rational64::from_integer(csv.quantity.abs().into())),
                 quantity_direction: QuantityDirection::from_signed_quantity(csv.quantity),
                 instrument_type: match csv.instrument_type.as_ref() {
                     // TODO: handle futures and futures options
@@ -267,7 +268,7 @@ pub mod transactions {
         #[serde(with = "string_serialize")]
         proprietary_index_option_fees: Decimal,
         proprietary_index_option_fees_effect: ValueEffect,
-        pub ext_global_order_number: u32,
+        pub ext_global_order_number: Option<u32>, // not present for crypto trades
     }
 
     impl PartialEq for TradeItem {
@@ -468,7 +469,7 @@ pub mod transactions {
                     regulatory_fees_effect: fees_effect,
                     proprietary_index_option_fees: split_fees,
                     proprietary_index_option_fees_effect: fees_effect,
-                    ext_global_order_number: 0,
+                    ext_global_order_number: Some(0),
                 })
             } else if csv.trade_type == "Receive Deliver" {
                 let description = csv.description.to_ascii_lowercase();
