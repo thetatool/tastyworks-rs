@@ -31,6 +31,7 @@ pub enum InstrumentType {
     Future,
     Equity,
     Index,
+    Cryptocurrency,
     Unknown,
 }
 
