@@ -22,7 +22,7 @@ impl<'a> OptionSymbol<'a> {
             self.underlying_symbol(),
             self.date_component(),
             self.option_type_component(),
-            integer,
+            if integer.is_empty() { "0" } else { integer },
             if decimal.is_empty() { "" } else { "." },
             decimal,
         )
@@ -131,6 +131,9 @@ mod tests {
     fn test_option_symbol_quote_symbol() {
         let quote_symbol = OptionSymbol::from("IQ 200918P00017500").quote_symbol();
         assert_eq!(quote_symbol, ".IQ200918P17.5");
+
+        let quote_symbol = OptionSymbol::from("SNDL  210416C00000500").quote_symbol();
+        assert_eq!(quote_symbol, ".SNDL210416C0.5");
     }
 
     #[test]
