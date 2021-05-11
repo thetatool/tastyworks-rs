@@ -7,7 +7,7 @@ use crate::{
     symbol::OptionSymbol,
 };
 
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use num_rational::Rational64;
 use num_traits::{Signed, Zero};
 use serde::{Deserialize, Serialize};
@@ -115,6 +115,7 @@ pub mod market_metrics {
         #[serde(with = "string_serialize")]
         pub updated_at: DateTime<FixedOffset>,
         pub option_expiration_implied_volatilities: Option<Vec<ExpirationImpliedVolatility>>,
+        pub earnings: Option<Earnings>,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
@@ -134,6 +135,21 @@ pub mod market_metrics {
                 .find(|eiv| eiv.expiration_date == date)?
                 .implied_volatility
         }
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct Earnings {
+        expected_report_date: NaiveDate,
+        estimated: bool,
+        time_of_day: Option<EarningsTimeOfDay>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub enum EarningsTimeOfDay {
+        BTO,
+        BMO,
+        AMC,
     }
 }
 
