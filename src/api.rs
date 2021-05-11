@@ -26,7 +26,7 @@ pub struct Pagination {
     pub total_pages: i32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub enum InstrumentType {
     Future,
     Equity,
@@ -145,7 +145,7 @@ pub mod market_metrics {
         time_of_day: Option<EarningsTimeOfDay>,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub enum EarningsTimeOfDay {
         BTO,
         BMO,
@@ -174,7 +174,7 @@ pub mod positions {
         pub instrument_type: String,
     }
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub enum QuantityDirection {
         Short,
         Long,
@@ -393,7 +393,7 @@ pub mod transactions {
         pub executed_at: DateTime<FixedOffset>,
     }
 
-    #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub enum TradeAction {
         Sell,
         Buy,
@@ -435,7 +435,7 @@ pub mod transactions {
         }
     }
 
-    #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub enum ValueEffect {
         None,
         Debit,
@@ -599,7 +599,7 @@ pub mod option_chains {
         pub strikes: Vec<ExpirationStrike>,
     }
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
     pub enum ExpirationType {
         Regular,
         Weekly,
