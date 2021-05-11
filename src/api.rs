@@ -164,7 +164,6 @@ pub mod market_metrics {
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, Hash)]
     pub enum EarningsTimeOfDay {
         BTO,
-        BMO,
         AMC,
     }
 }
