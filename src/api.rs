@@ -12,21 +12,21 @@ use num_rational::Rational64;
 use num_traits::{Signed, Zero};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Response<Data> {
     pub data: Data,
     pub pagination: Option<Pagination>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Pagination {
     pub page_offset: i32,
     pub total_pages: i32,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum InstrumentType {
     Future,
     Equity,
@@ -38,17 +38,17 @@ pub enum InstrumentType {
 pub mod accounts {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Item {
         pub account: Account,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Account {
         pub account_number: String,
@@ -58,19 +58,19 @@ pub mod accounts {
 pub mod watchlists {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Item {
         pub name: String,
         #[serde(rename = "watchlist-entries")]
         pub entries: Vec<Entry>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Entry {
         pub symbol: String,
         #[serde(alias = "instrument-type")] // appears as both kebab and snake case
@@ -81,12 +81,12 @@ pub mod watchlists {
 pub mod market_metrics {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub symbol: String,
@@ -118,7 +118,7 @@ pub mod market_metrics {
         pub earnings: Option<Earnings>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct ExpirationImpliedVolatility {
         #[serde(with = "string_serialize")]
@@ -137,7 +137,7 @@ pub mod market_metrics {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Earnings {
         expected_report_date: NaiveDate,
@@ -145,7 +145,7 @@ pub mod market_metrics {
         time_of_day: Option<EarningsTimeOfDay>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub enum EarningsTimeOfDay {
         BTO,
         BMO,
@@ -156,12 +156,12 @@ pub mod market_metrics {
 pub mod positions {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub symbol: String,
@@ -174,7 +174,7 @@ pub mod positions {
         pub instrument_type: String,
     }
 
-    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
     pub enum QuantityDirection {
         Short,
         Long,
@@ -232,12 +232,12 @@ pub mod positions {
 pub mod transactions {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(untagged)]
     pub enum Item {
         Trade(TradeItem),
@@ -263,7 +263,7 @@ pub mod transactions {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct TradeItem {
         pub id: u32,
@@ -335,7 +335,7 @@ pub mod transactions {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct ReceiveDeliverItem {
         pub id: u32,
@@ -384,7 +384,7 @@ pub mod transactions {
         }
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct OtherItem {
         pub id: u32,
@@ -393,7 +393,7 @@ pub mod transactions {
         pub executed_at: DateTime<FixedOffset>,
     }
 
-    #[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
     pub enum TradeAction {
         Sell,
         Buy,
@@ -435,7 +435,7 @@ pub mod transactions {
         }
     }
 
-    #[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
+    #[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
     pub enum ValueEffect {
         None,
         Debit,
@@ -548,12 +548,12 @@ pub mod transactions {
 pub mod option_chains {
     use super::*;
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     pub(crate) struct Response {
         pub items: Vec<Item>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Item {
         pub underlying_symbol: String,
@@ -564,7 +564,7 @@ pub mod option_chains {
         pub expirations: Vec<Expiration>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct TickSize {
         #[serde(with = "string_serialize")]
@@ -573,7 +573,7 @@ pub mod option_chains {
         pub threshold: Option<Decimal>,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Deliverable {
         pub symbol: Option<String>,
@@ -587,7 +587,7 @@ pub mod option_chains {
         pub percent: i32,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Expiration {
         pub expiration_type: ExpirationType,
@@ -599,14 +599,14 @@ pub mod option_chains {
         pub strikes: Vec<ExpirationStrike>,
     }
 
-    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
     pub enum ExpirationType {
         Regular,
         Weekly,
         Quarterly,
     }
 
-    #[derive(Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct ExpirationStrike {
         #[serde(with = "string_serialize")]
