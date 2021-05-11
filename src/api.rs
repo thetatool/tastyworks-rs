@@ -12,6 +12,8 @@ use num_rational::Rational64;
 use num_traits::{Signed, Zero};
 use serde::{Deserialize, Serialize};
 
+use std::cmp::Ordering;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct Response<Data> {
@@ -137,15 +139,29 @@ pub mod market_metrics {
         }
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Earnings {
-        expected_report_date: NaiveDate,
-        estimated: bool,
-        time_of_day: Option<EarningsTimeOfDay>,
+        pub expected_report_date: NaiveDate,
+        pub estimated: bool,
+        pub time_of_day: Option<EarningsTimeOfDay>,
     }
 
-    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+    impl PartialOrd for Earnings {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl Ord for Earnings {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.expected_report_date
+                .cmp(&other.expected_report_date)
+                .then(self.time_of_day.cmp(&other.time_of_day))
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize, Hash)]
     pub enum EarningsTimeOfDay {
         BTO,
         BMO,
