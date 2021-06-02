@@ -77,7 +77,7 @@ pub async fn transactions(
 }
 
 pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::Item>, ApiError> {
-    let mut results = stream::iter(symbols.chunks(MAX_SYMBOL_SUMMARY_BATCH_SIZE).map(
+    let results = stream::iter(symbols.chunks(MAX_SYMBOL_SUMMARY_BATCH_SIZE).map(
         |batch| async move {
             let symbols = batch.iter().cloned().join(",");
 
@@ -94,7 +94,7 @@ pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::It
     .await;
 
     let mut json = vec![];
-    for result in results.drain(..) {
+    for result in results.into_iter() {
         json.append(&mut result?.data.items);
     }
 

@@ -88,7 +88,7 @@ impl Client {
         let msg = self.read_message(true)?.ok_or(ClientIdResponseError)?;
         let msg_json = msg.to_text()?;
         let client_id = serde_json::from_str::<Vec<DxFeedConnectResponse>>(msg_json)?
-            .drain(..)
+            .into_iter()
             .next()
             .ok_or(ClientIdResponseError)?
             .client_id;
