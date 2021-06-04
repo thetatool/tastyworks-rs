@@ -429,6 +429,22 @@ pub mod transactions {
         pub transaction_type: String,
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
+        #[serde(with = "string_serialize")]
+        value: Decimal,
+        value_effect: ValueEffect,
+    }
+
+    impl PartialEq for OtherItem {
+        fn eq(&self, other: &Self) -> bool {
+            self.id == other.id
+        }
+    }
+    impl Eq for OtherItem {}
+
+    impl OtherItem {
+        pub fn value(&self) -> Rational64 {
+            self.value_effect.apply(self.value.0)
+        }
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
@@ -572,6 +588,8 @@ pub mod transactions {
                     id: 0,
                     transaction_type: csv.trade_type,
                     executed_at: csv.date,
+                    value: csv.value.abs(),
+                    value_effect: ValueEffect::from_value(csv.value.0),
                 })
             }
         }
