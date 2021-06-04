@@ -365,9 +365,18 @@ pub mod transactions {
         pub underlying_symbol: String,
         #[serde(with = "string_serialize")]
         value: Decimal,
-        pub value_effect: ValueEffect,
+        value_effect: ValueEffect,
         #[serde(with = "string_serialize")]
         pub quantity: Decimal,
+        #[serde(with = "optional_string_serialize")]
+        clearing_fees: Option<Decimal>,
+        clearing_fees_effect: Option<ValueEffect>,
+        #[serde(with = "optional_string_serialize")]
+        regulatory_fees: Option<Decimal>,
+        regulatory_fees_effect: Option<ValueEffect>,
+        #[serde(with = "optional_string_serialize")]
+        proprietary_index_option_fees: Option<Decimal>,
+        proprietary_index_option_fees_effect: Option<ValueEffect>,
     }
 
     impl PartialEq for ReceiveDeliverItem {
@@ -380,6 +389,20 @@ pub mod transactions {
     impl ReceiveDeliverItem {
         pub fn value(&self) -> Rational64 {
             self.value_effect.apply(self.value.0)
+        }
+
+        pub fn fees(&self) -> Rational64 {
+            self.clearing_fees_effect
+                .map(|v| v.apply(self.clearing_fees.unwrap().0))
+                .unwrap_or_else(|| Rational64::zero())
+                + self
+                    .regulatory_fees_effect
+                    .map(|v| v.apply(self.regulatory_fees.unwrap().0))
+                    .unwrap_or_else(|| Rational64::zero())
+                + self
+                    .proprietary_index_option_fees_effect
+                    .map(|v| v.apply(self.proprietary_index_option_fees.unwrap().0))
+                    .unwrap_or_else(|| Rational64::zero())
         }
 
         pub fn expiration_date(&self) -> ExpirationDate {
@@ -537,6 +560,12 @@ pub mod transactions {
                     value: csv.value.abs(),
                     value_effect: ValueEffect::from_value(csv.value.0),
                     quantity: csv.quantity,
+                    clearing_fees: Some(split_fees),
+                    clearing_fees_effect: Some(fees_effect),
+                    regulatory_fees: Some(split_fees),
+                    regulatory_fees_effect: Some(fees_effect),
+                    proprietary_index_option_fees: Some(split_fees),
+                    proprietary_index_option_fees_effect: Some(fees_effect),
                 })
             } else {
                 Item::Other(OtherItem {
