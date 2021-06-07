@@ -30,8 +30,12 @@ pub struct Pagination {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
 pub enum InstrumentType {
-    Future,
     Equity,
+    #[serde(rename = "Equity Option")]
+    EquityOption,
+    Future,
+    #[serde(rename = "Future Option")]
+    FutureOption,
     Index,
     Cryptocurrency,
     Unknown,
@@ -253,11 +257,13 @@ pub mod transactions {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    #[serde(untagged)]
+    #[serde(tag = "transaction-type")]
     pub enum Item {
         Trade(TradeItem),
+        #[serde(rename = "Receive Deliver")]
         ReceiveDeliver(ReceiveDeliverItem),
-        Other(OtherItem),
+        #[serde(rename = "Money Movement")]
+        MoneyMovement(MoneyMovementItem),
     }
 
     impl Item {
@@ -265,7 +271,7 @@ pub mod transactions {
             match self {
                 Self::Trade(item) => &mut item.id,
                 Self::ReceiveDeliver(item) => &mut item.id,
-                Self::Other(item) => &mut item.id,
+                Self::MoneyMovement(item) => &mut item.id,
             }
         }
 
@@ -273,7 +279,7 @@ pub mod transactions {
             match self {
                 Self::Trade(item) => item.executed_at,
                 Self::ReceiveDeliver(item) => item.executed_at,
-                Self::Other(item) => item.executed_at,
+                Self::MoneyMovement(item) => item.executed_at,
             }
         }
     }
@@ -283,8 +289,7 @@ pub mod transactions {
     pub struct TradeItem {
         pub id: u32,
         pub symbol: String,
-        pub instrument_type: String,
-        pub transaction_type: String,
+        pub instrument_type: InstrumentType,
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
         pub action: TradeAction,
@@ -355,9 +360,8 @@ pub mod transactions {
     pub struct ReceiveDeliverItem {
         pub id: u32,
         pub symbol: String,
-        pub instrument_type: String,
-        pub transaction_type: String,
-        pub transaction_sub_type: String,
+        pub instrument_type: InstrumentType,
+        pub transaction_sub_type: ReceiveDeliverTransactionSubType,
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
         #[serde(default)]
@@ -377,6 +381,27 @@ pub mod transactions {
         #[serde(with = "optional_string_serialize")]
         proprietary_index_option_fees: Option<Decimal>,
         proprietary_index_option_fees_effect: Option<ValueEffect>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
+    pub enum ReceiveDeliverTransactionSubType {
+        Exercise,
+        Expiration,
+        Assignment,
+        #[serde(rename = "Forward Split")]
+        ForwardSplit,
+        #[serde(rename = "Backwards Split")]
+        BackwardsSplit,
+        #[serde(rename = "Symbol Change")]
+        SymbolChange,
+        #[serde(rename = "Sell to Open")]
+        SellToOpen,
+        #[serde(rename = "Buy to Open")]
+        BuyToOpen,
+        #[serde(rename = "Sell to Close")]
+        SellToClose,
+        #[serde(rename = "Buy to Close")]
+        BuyToClose,
     }
 
     impl PartialEq for ReceiveDeliverItem {
@@ -424,9 +449,8 @@ pub mod transactions {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub struct OtherItem {
+    pub struct MoneyMovementItem {
         pub id: u32,
-        pub transaction_type: String,
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
         #[serde(with = "string_serialize")]
@@ -434,14 +458,14 @@ pub mod transactions {
         value_effect: ValueEffect,
     }
 
-    impl PartialEq for OtherItem {
+    impl PartialEq for MoneyMovementItem {
         fn eq(&self, other: &Self) -> bool {
             self.id == other.id
         }
     }
-    impl Eq for OtherItem {}
+    impl Eq for MoneyMovementItem {}
 
-    impl OtherItem {
+    impl MoneyMovementItem {
         pub fn value(&self) -> Rational64 {
             self.value_effect.apply(self.value.0)
         }
@@ -519,7 +543,12 @@ pub mod transactions {
     impl From<csv::Transaction> for Item {
         fn from(csv: csv::Transaction) -> Self {
             let symbol = csv.symbol.clone().unwrap_or_default();
-            let instrument_type = csv.instrument_type.clone().unwrap_or_default();
+            let instrument_type = serde_json::from_str(
+                csv.instrument_type
+                    .as_ref()
+                    .expect("Missing instrument type"),
+            )
+            .unwrap();
             let underlying_symbol = csv.underlying_symbol().unwrap_or_default().to_string();
 
             let split_fees = Decimal(csv.fees.abs().0 / 3);
@@ -531,7 +560,6 @@ pub mod transactions {
                     id: 0,
                     symbol,
                     instrument_type,
-                    transaction_type: csv.trade_type,
                     executed_at: csv.date,
                     action: csv.action.expect("Missing trade action").into(),
                     underlying_symbol,
@@ -551,24 +579,33 @@ pub mod transactions {
             } else if csv.trade_type == "Receive Deliver" {
                 let description = csv.description.to_ascii_lowercase();
                 let transaction_sub_type = if description.contains("exercise") {
-                    "Exercise".to_string()
+                    ReceiveDeliverTransactionSubType::Exercise
                 } else if description.contains("expiration") {
-                    "Expiration".to_string()
+                    ReceiveDeliverTransactionSubType::Expiration
                 } else if description.contains("assignment") {
-                    "Assignment".to_string()
+                    ReceiveDeliverTransactionSubType::Assignment
                 } else if description.contains("forward split") {
-                    "Forward Split".to_string()
+                    ReceiveDeliverTransactionSubType::ForwardSplit
                 } else if description.contains("backwards split") {
-                    "Backwards Split".to_string()
+                    ReceiveDeliverTransactionSubType::BackwardsSplit
+                } else if description.contains("symbol change") {
+                    ReceiveDeliverTransactionSubType::SymbolChange
+                } else if description.contains("sell to open") {
+                    ReceiveDeliverTransactionSubType::SellToOpen
+                } else if description.contains("buy to open") {
+                    ReceiveDeliverTransactionSubType::BuyToOpen
+                } else if description.contains("sell to close") {
+                    ReceiveDeliverTransactionSubType::SellToClose
+                } else if description.contains("buy to close") {
+                    ReceiveDeliverTransactionSubType::BuyToClose
                 } else {
-                    description
+                    unreachable!("Unhandled transaction sub-type: {}", description);
                 };
 
                 Item::ReceiveDeliver(ReceiveDeliverItem {
                     id: 0,
                     symbol,
                     instrument_type,
-                    transaction_type: csv.trade_type,
                     transaction_sub_type,
                     executed_at: csv.date,
                     action: csv.action.map(|action| action.into()),
@@ -583,14 +620,15 @@ pub mod transactions {
                     proprietary_index_option_fees: Some(split_fees),
                     proprietary_index_option_fees_effect: Some(fees_effect),
                 })
-            } else {
-                Item::Other(OtherItem {
+            } else if csv.trade_type == "Money Movement" {
+                Item::MoneyMovement(MoneyMovementItem {
                     id: 0,
-                    transaction_type: csv.trade_type,
                     executed_at: csv.date,
                     value: csv.value.abs(),
                     value_effect: ValueEffect::from_value(csv.value.0),
                 })
+            } else {
+                unreachable!("Unhandled transaction type: {}", csv.trade_type);
             }
         }
     }
