@@ -372,13 +372,13 @@ pub mod transactions {
         value_effect: ValueEffect,
         #[serde(with = "string_serialize")]
         pub quantity: Decimal,
-        #[serde(with = "optional_string_serialize")]
+        #[serde(default, with = "optional_string_serialize")]
         clearing_fees: Option<Decimal>,
         clearing_fees_effect: Option<ValueEffect>,
-        #[serde(with = "optional_string_serialize")]
+        #[serde(default, with = "optional_string_serialize")]
         regulatory_fees: Option<Decimal>,
         regulatory_fees_effect: Option<ValueEffect>,
-        #[serde(with = "optional_string_serialize")]
+        #[serde(default, with = "optional_string_serialize")]
         proprietary_index_option_fees: Option<Decimal>,
         proprietary_index_option_fees_effect: Option<ValueEffect>,
     }
