@@ -365,7 +365,8 @@ pub mod transactions {
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
         #[serde(default)]
-        pub action: Option<TradeAction>, // defined for stock splits, missing for exercise
+        // defined for splits, symbols changes and STO/BTO/STC/BTC transaction sub types
+        pub action: Option<TradeAction>,
         pub underlying_symbol: String,
         #[serde(with = "string_serialize")]
         value: Decimal,
