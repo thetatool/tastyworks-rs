@@ -259,11 +259,11 @@ pub mod transactions {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(tag = "transaction-type")]
     pub enum Item {
-        Trade(TradeItem),
+        Trade(Trade),
         #[serde(rename = "Receive Deliver")]
-        ReceiveDeliver(ReceiveDeliverItem),
+        ReceiveDeliver(ReceiveDeliver),
         #[serde(rename = "Money Movement")]
-        MoneyMovement(MoneyMovementItem),
+        MoneyMovement(MoneyMovement),
     }
 
     impl Item {
@@ -286,7 +286,7 @@ pub mod transactions {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub struct TradeItem {
+    pub struct Trade {
         pub id: u32,
         pub symbol: String,
         pub instrument_type: InstrumentType,
@@ -314,14 +314,14 @@ pub mod transactions {
         pub ext_global_order_number: Option<u32>, // not present for crypto trades
     }
 
-    impl PartialEq for TradeItem {
+    impl PartialEq for Trade {
         fn eq(&self, other: &Self) -> bool {
             self.id == other.id
         }
     }
-    impl Eq for TradeItem {}
+    impl Eq for Trade {}
 
-    impl TradeItem {
+    impl Trade {
         pub fn value(&self) -> Rational64 {
             self.value_effect.apply(self.value.0)
         }
@@ -357,7 +357,7 @@ pub mod transactions {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub struct ReceiveDeliverItem {
+    pub struct ReceiveDeliver {
         pub id: u32,
         pub symbol: String,
         pub instrument_type: InstrumentType,
@@ -405,14 +405,14 @@ pub mod transactions {
         BuyToClose,
     }
 
-    impl PartialEq for ReceiveDeliverItem {
+    impl PartialEq for ReceiveDeliver {
         fn eq(&self, other: &Self) -> bool {
             self.id == other.id
         }
     }
-    impl Eq for ReceiveDeliverItem {}
+    impl Eq for ReceiveDeliver {}
 
-    impl ReceiveDeliverItem {
+    impl ReceiveDeliver {
         pub fn value(&self) -> Rational64 {
             self.value_effect.apply(self.value.0)
         }
@@ -450,7 +450,7 @@ pub mod transactions {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
-    pub struct MoneyMovementItem {
+    pub struct MoneyMovement {
         pub id: u32,
         #[serde(with = "string_serialize")]
         pub executed_at: DateTime<FixedOffset>,
@@ -459,14 +459,14 @@ pub mod transactions {
         value_effect: ValueEffect,
     }
 
-    impl PartialEq for MoneyMovementItem {
+    impl PartialEq for MoneyMovement {
         fn eq(&self, other: &Self) -> bool {
             self.id == other.id
         }
     }
-    impl Eq for MoneyMovementItem {}
+    impl Eq for MoneyMovement {}
 
-    impl MoneyMovementItem {
+    impl MoneyMovement {
         pub fn value(&self) -> Rational64 {
             self.value_effect.apply(self.value.0)
         }
@@ -557,7 +557,7 @@ pub mod transactions {
 
             if csv.trade_type == "Trade" {
                 let commission = csv.commissions.expect("Missing commissions").abs();
-                Item::Trade(TradeItem {
+                Item::Trade(Trade {
                     id: 0,
                     symbol,
                     instrument_type,
@@ -603,7 +603,7 @@ pub mod transactions {
                     unreachable!("Unhandled transaction sub-type: {}", description);
                 };
 
-                Item::ReceiveDeliver(ReceiveDeliverItem {
+                Item::ReceiveDeliver(ReceiveDeliver {
                     id: 0,
                     symbol,
                     instrument_type,
@@ -622,7 +622,7 @@ pub mod transactions {
                     proprietary_index_option_fees_effect: Some(fees_effect),
                 })
             } else if csv.trade_type == "Money Movement" {
-                Item::MoneyMovement(MoneyMovementItem {
+                Item::MoneyMovement(MoneyMovement {
                     id: 0,
                     executed_at: csv.date,
                     value: csv.value.abs(),
