@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 
@@ -45,10 +45,10 @@ pub async fn positions(account: &accounts::Account) -> Result<Vec<positions::Ite
     Ok(response.data.items)
 }
 
-pub async fn transactions(
+pub async fn transactions<Tz: TimeZone>(
     account: &accounts::Account,
-    start_date: DateTime<Utc>,
-    end_date: DateTime<Utc>,
+    start_date: DateTime<Tz>,
+    end_date: DateTime<Tz>,
     prev_pagination: Option<Pagination>,
 ) -> Result<Option<(Vec<transactions::Item>, Option<Pagination>)>, ApiError> {
     let page_offset = if let Some(api::Pagination {
@@ -68,7 +68,9 @@ pub async fn transactions(
     let url = format!("accounts/{}/transactions", account.account_number);
     let parameters = format!(
         "start-date={}&end-date={}&page-offset={}",
-        start_date, end_date, page_offset
+        start_date.with_timezone(&Utc),
+        end_date.with_timezone(&Utc),
+        page_offset
     );
     let response: api::Response<transactions::Response> =
         deserialize_response(request(&url, &parameters).await?).await?;
