@@ -190,7 +190,7 @@ pub mod positions {
         )]
         pub quantity: Decimal,
         pub quantity_direction: QuantityDirection,
-        pub instrument_type: String,
+        pub instrument_type: InstrumentType,
     }
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Hash)]
@@ -239,8 +239,8 @@ pub mod positions {
                 quantity_direction: QuantityDirection::from_signed_quantity(csv.quantity),
                 instrument_type: match csv.instrument_type.as_ref() {
                     // TODO: handle futures and futures options
-                    "OPTION" => "Equity Option".to_string(),
-                    "STOCK" => "Equity".to_string(),
+                    "OPTION" => InstrumentType::EquityOption,
+                    "STOCK" => InstrumentType::Equity,
                     _ => unreachable!("Unhandled instrument type: {}", csv.instrument_type),
                 },
             }
