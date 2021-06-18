@@ -544,12 +544,17 @@ pub mod transactions {
     impl From<csv::Transaction> for Item {
         fn from(csv: csv::Transaction) -> Self {
             let symbol = csv.symbol.clone().unwrap_or_default();
-            let instrument_type = serde_json::from_str(
-                csv.instrument_type
-                    .as_ref()
-                    .expect("Missing instrument type"),
-            )
-            .unwrap();
+            let instrument_type: Option<InstrumentType> =
+                csv.instrument_type.as_ref().map(|instrument_type_str| {
+                    serde_json::from_str(&format!("\"{}\"", instrument_type_str)).unwrap_or_else(
+                        |_| {
+                            panic!(
+                                "Failed to deserialize InstrumentType from '{}'",
+                                instrument_type_str
+                            )
+                        },
+                    )
+                });
             let underlying_symbol = csv.underlying_symbol().unwrap_or_default().to_string();
 
             let split_fees = Decimal(csv.fees.abs().0 / 3);
@@ -560,7 +565,7 @@ pub mod transactions {
                 Item::Trade(Trade {
                     id: 0,
                     symbol,
-                    instrument_type,
+                    instrument_type: instrument_type.expect("Missing instrument type"),
                     executed_at: csv.date,
                     action: csv.action.expect("Missing trade action").into(),
                     underlying_symbol,
@@ -606,7 +611,7 @@ pub mod transactions {
                 Item::ReceiveDeliver(ReceiveDeliver {
                     id: 0,
                     symbol,
-                    instrument_type,
+                    instrument_type: instrument_type.expect("Missing instrument type"),
                     transaction_sub_type,
                     executed_at: csv.date,
                     action: csv.action.map(|action| action.into()),
