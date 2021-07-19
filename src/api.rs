@@ -391,8 +391,8 @@ pub mod transactions {
         Assignment,
         #[serde(rename = "Forward Split")]
         ForwardSplit,
-        #[serde(rename = "Backwards Split")]
-        BackwardsSplit,
+        #[serde(rename = "Reverse Split")]
+        ReverseSplit,
         #[serde(rename = "Symbol Change")]
         SymbolChange,
         #[serde(rename = "Sell to Open")]
@@ -592,8 +592,8 @@ pub mod transactions {
                     ReceiveDeliverTransactionSubType::Assignment
                 } else if description.contains("forward split") {
                     ReceiveDeliverTransactionSubType::ForwardSplit
-                } else if description.contains("backwards split") {
-                    ReceiveDeliverTransactionSubType::BackwardsSplit
+                } else if description.contains("reverse split") {
+                    ReceiveDeliverTransactionSubType::ReverseSplit
                 } else if description.contains("symbol change") {
                     ReceiveDeliverTransactionSubType::SymbolChange
                 } else if description.contains("sell to open") {
