@@ -2,6 +2,10 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hash;
+use std::hash::Hasher;
+
 pub mod api;
 pub mod common;
 mod constants;
@@ -122,6 +126,17 @@ where
             e,
             url: request::obfuscate_account_url(&url),
         })?;
+
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    let cache_path = format!("{}.json", hasher.finish().to_string());
+    let string = format!(
+        "// {} ({})\n{}",
+        url,
+        Utc::now(),
+        std::str::from_utf8(&bytes).unwrap()
+    );
+    std::fs::write(cache_path, string).unwrap();
 
     let de = &mut serde_json::Deserializer::from_slice(&bytes);
     let result: Result<T, _> = serde_path_to_error::deserialize(de);
