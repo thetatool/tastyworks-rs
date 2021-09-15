@@ -395,6 +395,8 @@ pub mod transactions {
         ReverseSplit,
         #[serde(rename = "Symbol Change")]
         SymbolChange,
+        #[serde(rename = "Stock Merger")]
+        StockMerger,
         #[serde(rename = "Sell to Open")]
         SellToOpen,
         #[serde(rename = "Buy to Open")]
