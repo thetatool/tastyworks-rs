@@ -371,8 +371,8 @@ pub mod transactions {
         #[serde(with = "string_serialize")]
         value: Decimal,
         value_effect: ValueEffect,
-        #[serde(with = "string_serialize")]
-        pub quantity: Decimal,
+        #[serde(default, with = "optional_string_serialize")]
+        pub quantity: Option<Decimal>,
         #[serde(default, with = "optional_string_serialize")]
         clearing_fees: Option<Decimal>,
         clearing_fees_effect: Option<ValueEffect>,
@@ -389,6 +389,8 @@ pub mod transactions {
         Exercise,
         Expiration,
         Assignment,
+        #[serde(rename = "Cash Settled Assignment")]
+        CashSettledAssignment,
         #[serde(rename = "Forward Split")]
         ForwardSplit,
         #[serde(rename = "Reverse Split")]
@@ -620,7 +622,7 @@ pub mod transactions {
                     underlying_symbol,
                     value: csv.value.abs(),
                     value_effect: ValueEffect::from_value(csv.value.0),
-                    quantity: csv.quantity,
+                    quantity: Some(csv.quantity),
                     clearing_fees: Some(split_fees),
                     clearing_fees_effect: Some(fees_effect),
                     regulatory_fees: Some(split_fees),
