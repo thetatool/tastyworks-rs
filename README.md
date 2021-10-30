@@ -1,9 +1,7 @@
 # tastyworks-rs
 
-[![Crates.io][crates_img]][crates_link]
-
-[crates_img]: https://img.shields.io/crates/v/tastyworks.svg
-[crates_link]: https://crates.io/crates/tastyworks
+[![Crates.io](https://img.shields.io/crates/v/tastyworks.svg)](https://crates.io/crates/tastyworks)
+[![Docs Status](https://docs.rs/tastyworks/badge.svg)](https://docs.rs/tastyworks)
 
 Unofficial Tastyworks API for Rust.
 
