@@ -11,6 +11,13 @@ pub struct Context {
 }
 
 impl Context {
+    /// Creates a context using the provided token.
+    pub fn from_token(token: &str) -> Self {
+        Context {
+            token: token.to_string(),
+        }
+    }
+
     /// Creates a context by extracting the token from the installed version of tastyworks.
     ///
     /// Returns an error if the token can not be found, for example if tastyworks is not installed or logged in.
@@ -18,13 +25,6 @@ impl Context {
         Ok(Context {
             token: extract_token_from_preferences_file()?,
         })
-    }
-
-    /// Creates a context using the provided token.
-    pub fn from_token(token: &str) -> Self {
-        Context {
-            token: token.to_string(),
-        }
     }
 }
 

@@ -188,7 +188,7 @@ pub mod positions {
             deserialize_with = "deserialize_integer_or_string_as_decimal",
             serialize_with = "string_serialize::serialize"
         )]
-        pub quantity: Decimal,
+        pub quantity: Rational64,
         pub quantity_direction: QuantityDirection,
         pub instrument_type: InstrumentType,
     }
@@ -229,13 +229,21 @@ pub mod positions {
         pub fn strike_price(&self) -> Rational64 {
             OptionSymbol::from(&self.symbol).strike_price()
         }
+
+        pub fn signed_quantity(&self) -> Rational64 {
+            self.quantity
+                * match self.quantity_direction {
+                    QuantityDirection::Short => -1,
+                    QuantityDirection::Long => 1,
+                }
+        }
     }
 
     impl From<csv::Position> for Item {
         fn from(csv: csv::Position) -> Self {
             Self {
                 symbol: csv.symbol,
-                quantity: Decimal(Rational64::from_integer(csv.quantity.abs().into())),
+                quantity: Rational64::from_integer(csv.quantity.abs().into()),
                 quantity_direction: QuantityDirection::from_signed_quantity(csv.quantity),
                 instrument_type: match csv.instrument_type.as_ref() {
                     // TODO: handle futures and futures options

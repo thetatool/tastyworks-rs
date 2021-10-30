@@ -60,7 +60,7 @@ pub mod optional_string_serialize {
 
 pub fn deserialize_integer_or_string_as_decimal<'de, D>(
     deserializer: D,
-) -> Result<Decimal, D::Error>
+) -> Result<Rational64, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -70,7 +70,7 @@ where
 struct DeserializeIntegerOrStringAsDecimal;
 
 impl<'de> de::Visitor<'de> for DeserializeIntegerOrStringAsDecimal {
-    type Value = Decimal;
+    type Value = Rational64;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("an integer or a string")
@@ -80,7 +80,7 @@ impl<'de> de::Visitor<'de> for DeserializeIntegerOrStringAsDecimal {
     where
         E: de::Error,
     {
-        Ok(Decimal(Rational64::from_integer(v)))
+        Ok(Rational64::from_integer(v))
     }
 
     fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
@@ -94,6 +94,8 @@ impl<'de> de::Visitor<'de> for DeserializeIntegerOrStringAsDecimal {
     where
         E: de::Error,
     {
-        Decimal::from_str(v).map_err(de::Error::custom)
+        Decimal::from_str(v)
+            .map(|decimal| decimal.0)
+            .map_err(de::Error::custom)
     }
 }
