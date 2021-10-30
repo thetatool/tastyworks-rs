@@ -1,13 +1,7 @@
-use crate::{
-    constants::{API_ENV_KEY, SESSION_ID_KEY},
-    errors::RequestError,
-};
+use crate::{context::Context, errors::RequestError};
 
 use lazy_static::lazy_static;
-use regex::Regex;
 use reqwest::{header, Client};
-
-use std::path::PathBuf;
 
 pub use reqwest::StatusCode;
 
@@ -21,43 +15,13 @@ lazy_static! {
         .unwrap();
 }
 
-thread_local! {
-    static API_TOKEN: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
-}
-
 pub async fn request(
     url_path: &str,
     params_string: &str,
+    context: &Context,
 ) -> Result<reqwest::Response, RequestError> {
-    let mut api_token_header_value = None;
-    let mut error: Option<RequestError> = None;
-
-    API_TOKEN.with(|t| {
-        if t.borrow().is_none() {
-            if let Ok(token) = std::env::var(API_ENV_KEY) {
-                t.replace(Some(token));
-            } else {
-                match extract_token_from_preferences_file() {
-                    Ok(token) => {
-                        t.replace(Some(token));
-                    }
-                    Err(e) => {
-                        error = Some(e);
-                    }
-                }
-            }
-        };
-
-        if let Some(t) = &*t.borrow() {
-            let mut value = header::HeaderValue::from_str(&t).unwrap();
-            value.set_sensitive(true);
-            api_token_header_value = Some(value);
-        }
-    });
-
-    if let Some(error) = error {
-        return Err(error);
-    }
+    let mut api_token_header_value = header::HeaderValue::from_str(&context.token).unwrap();
+    api_token_header_value.set_sensitive(true);
 
     let params_string = if params_string.is_empty() {
         params_string.to_string()
@@ -70,7 +34,7 @@ pub async fn request(
 
     let response = CLIENT
         .get(&url)
-        .header(header::AUTHORIZATION, api_token_header_value.unwrap())
+        .header(header::AUTHORIZATION, api_token_header_value)
         .send()
         .await;
 
@@ -91,66 +55,6 @@ pub async fn request(
                 Ok(response)
             }
         }
-    }
-}
-
-fn extract_token_from_preferences_file() -> Result<String, RequestError> {
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new(&format!(r#""{}"\s*:\s*"([^"]*)"#, SESSION_ID_KEY)).unwrap();
-    }
-
-    let mut path: PathBuf = [dirs::home_dir(), dirs::data_local_dir()]
-        .iter()
-        .flatten()
-        .filter_map(|p| {
-            let mut p = p.to_path_buf();
-            for f in &["tastyworks", ".tastyworks"] {
-                p.push(f);
-                if p.exists() {
-                    return Some(p);
-                }
-                p.pop();
-            }
-            None
-        })
-        .next()
-        .ok_or(RequestError::ConfigDirMissing)?;
-
-    path.push("desktop/preferences_user.json");
-
-    let json = std::fs::read_to_string(&path);
-    match json {
-        Ok(json) => {
-            if let Some(m) = RE.captures(&json).and_then(|caps| caps.get(1)) {
-                let m_str = m.as_str();
-                if m_str.is_empty() {
-                    Err(RequestError::TokenMissing)
-                } else {
-                    Ok(m_str.to_string())
-                }
-            } else {
-                let line = json.lines().find(|line| line.contains(SESSION_ID_KEY));
-                if let Some(line) = line {
-                    let start_idx = line.find(SESSION_ID_KEY).unwrap();
-                    let end_idx = start_idx + SESSION_ID_KEY.len();
-                    let obfuscated_line: String = line
-                        .char_indices()
-                        .map(|(idx, c)| {
-                            if c.is_alphanumeric() && (idx < start_idx || idx >= end_idx) {
-                                '*'
-                            } else {
-                                c
-                            }
-                        })
-                        .collect();
-                    Err(RequestError::FailedRegex { obfuscated_line })
-                } else {
-                    Err(RequestError::SessionKeyMissing)
-                }
-            }
-        }
-        Err(_) => Err(RequestError::Io { path }),
     }
 }
 

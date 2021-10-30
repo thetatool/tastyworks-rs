@@ -5,6 +5,7 @@ use itertools::Itertools;
 pub mod api;
 pub mod common;
 mod constants;
+pub mod context;
 pub mod csv;
 pub mod errors;
 pub mod request;
@@ -12,36 +13,39 @@ pub mod streamer;
 pub mod symbol;
 
 use crate::errors::*;
-pub use crate::{api::*, request::*};
+pub use crate::{api::*, context::Context, request::*};
 
 const MAX_SYMBOL_SUMMARY_BATCH_SIZE: usize = 500;
 const PARALLEL_REQUESTS: usize = 10;
 
-pub async fn accounts() -> Result<Vec<accounts::Item>, ApiError> {
+pub async fn accounts(context: &Context) -> Result<Vec<accounts::Item>, ApiError> {
     let url = "customers/me/accounts";
     let response: api::Response<accounts::Response> =
-        deserialize_response(request(url, "").await?).await?;
+        deserialize_response(request(url, "", context).await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn watchlists() -> Result<Vec<watchlists::Item>, ApiError> {
+pub async fn watchlists(context: &Context) -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "watchlists";
     let response: api::Response<watchlists::Response> =
-        deserialize_response(request(url, "").await?).await?;
+        deserialize_response(request(url, "", context).await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn public_watchlists() -> Result<Vec<watchlists::Item>, ApiError> {
+pub async fn public_watchlists(context: &Context) -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "public-watchlists";
     let response: api::Response<watchlists::Response> =
-        deserialize_response(request(url, "").await?).await?;
+        deserialize_response(request(url, "", context).await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn positions(account: &accounts::Account) -> Result<Vec<positions::Item>, ApiError> {
+pub async fn positions(
+    account: &accounts::Account,
+    context: &Context,
+) -> Result<Vec<positions::Item>, ApiError> {
     let url = format!("accounts/{}/positions", account.account_number);
     let response: api::Response<positions::Response> =
-        deserialize_response(request(&url, "").await?).await?;
+        deserialize_response(request(&url, "", context).await?).await?;
     Ok(response.data.items)
 }
 
@@ -50,6 +54,7 @@ pub async fn transactions<Tz: TimeZone>(
     start_date: DateTime<Tz>,
     end_date: DateTime<Tz>,
     prev_pagination: Option<Pagination>,
+    context: &Context,
 ) -> Result<Option<(Vec<transactions::Item>, Option<Pagination>)>, ApiError> {
     let page_offset = if let Some(api::Pagination {
         page_offset,
@@ -73,12 +78,15 @@ pub async fn transactions<Tz: TimeZone>(
         page_offset
     );
     let response: api::Response<transactions::Response> =
-        deserialize_response(request(&url, &parameters).await?).await?;
+        deserialize_response(request(&url, &parameters, context).await?).await?;
 
     Ok(Some((response.data.items, response.pagination)))
 }
 
-pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::Item>, ApiError> {
+pub async fn market_metrics(
+    symbols: &[String],
+    context: &Context,
+) -> Result<Vec<market_metrics::Item>, ApiError> {
     let results = stream::iter(symbols.chunks(MAX_SYMBOL_SUMMARY_BATCH_SIZE).map(
         |batch| async move {
             let symbols = batch.iter().cloned().join(",");
@@ -86,7 +94,7 @@ pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::It
             let url_path = "market-metrics";
             let params_string = &format!("symbols={}", symbols);
             let response: Result<api::Response<market_metrics::Response>, ApiError> =
-                deserialize_response(request(url_path, params_string).await?).await;
+                deserialize_response(request(url_path, params_string, context).await?).await;
 
             response
         },
@@ -103,10 +111,13 @@ pub async fn market_metrics(symbols: &[String]) -> Result<Vec<market_metrics::It
     Ok(json)
 }
 
-pub async fn option_chains(symbol: &str) -> Result<Vec<option_chains::Item>, ApiError> {
+pub async fn option_chains(
+    symbol: &str,
+    context: &Context,
+) -> Result<Vec<option_chains::Item>, ApiError> {
     let url = format!("option-chains/{}/nested", symbol);
     let response: api::Response<option_chains::Response> =
-        deserialize_response(request(&url, "").await?).await?;
+        deserialize_response(request(&url, "", context).await?).await?;
     Ok(response.data.items)
 }
 
