@@ -397,6 +397,7 @@ pub mod transactions {
         Exercise,
         Expiration,
         Assignment,
+        Transfer,
         #[serde(rename = "Cash Settled Assignment")]
         CashSettledAssignment,
         #[serde(rename = "Forward Split")]
