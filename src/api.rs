@@ -72,7 +72,7 @@ pub mod watchlists {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Item {
         pub name: String,
-        #[serde(rename = "watchlist-entries")]
+        #[serde(default, rename = "watchlist-entries")]
         pub entries: Vec<Entry>,
     }
 
