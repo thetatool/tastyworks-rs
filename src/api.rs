@@ -416,6 +416,10 @@ pub mod transactions {
         SellToClose,
         #[serde(rename = "Buy to Close")]
         BuyToClose,
+        #[serde(rename = "Futures Settlement")]
+        FuturesSettlement,
+        #[serde(rename = "ACAT")]
+        ACAT,
     }
 
     impl PartialEq for ReceiveDeliver {
