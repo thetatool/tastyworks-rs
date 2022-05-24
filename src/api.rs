@@ -172,6 +172,23 @@ pub mod market_metrics {
     }
 }
 
+pub mod balances {
+    use super::*;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub struct Data {
+        #[serde(with = "string_serialize")]
+        cash_balance: Decimal,
+        #[serde(with = "string_serialize")]
+        net_liquidating_value: Decimal,
+        #[serde(with = "string_serialize")]
+        equity_buying_power: Decimal,
+        #[serde(with = "string_serialize")]
+        derivative_buying_power: Decimal,
+    }
+}
+
 pub mod positions {
     use super::*;
 

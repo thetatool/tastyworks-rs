@@ -93,6 +93,16 @@ pub async fn public_watchlists(context: &Context) -> Result<Vec<watchlists::Item
     Ok(response.data.items)
 }
 
+pub async fn balances(
+    account: &accounts::Account,
+    context: &Context,
+) -> Result<balances::Data, ApiError> {
+    let url = format!("accounts/{}/balances", account.account_number);
+    let response: api::Response<balances::Data> =
+        deserialize_response(request(&url, "", context).await?).await?;
+    Ok(response.data)
+}
+
 pub async fn positions(
     account: &accounts::Account,
     context: &Context,
