@@ -72,6 +72,7 @@ pub mod watchlists {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct Item {
         pub name: String,
+        // may be missing for some watchlists e.g. 'tasty earnings' with no upcoming earnings
         #[serde(default, rename = "watchlist-entries")]
         pub entries: Vec<Entry>,
     }
