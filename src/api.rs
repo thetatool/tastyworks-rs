@@ -147,7 +147,7 @@ pub mod market_metrics {
     #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct Earnings {
-        pub expected_report_date: NaiveDate,
+        pub expected_report_date: Option<NaiveDate>,
         pub estimated: bool,
         pub time_of_day: Option<EarningsTimeOfDay>,
     }
