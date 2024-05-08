@@ -119,8 +119,6 @@ pub mod market_metrics {
         #[serde(default, with = "optional_string_serialize")]
         pub liquidity_rank: Option<f64>,
         pub liquidity_rating: Option<i32>,
-        #[serde(with = "string_serialize")]
-        pub updated_at: DateTime<FixedOffset>,
         pub option_expiration_implied_volatilities: Option<Vec<ExpirationImpliedVolatility>>,
         pub earnings: Option<Earnings>,
     }
