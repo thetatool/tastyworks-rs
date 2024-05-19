@@ -1,23 +1,10 @@
 use std::error::Error;
 use std::fmt;
-use std::path::PathBuf;
-
-const RESTART_MSG: &str =
-    "Try restarting tastyworks desktop and logging in, even if you are currently logged in.";
-
-fn install_msg() -> String {
-    format!("Ensure that tastyworks desktop is installed.")
-}
 
 #[derive(Debug)]
 pub enum ApiError {
     Request(RequestError),
     Decode { e: Box<dyn Error>, url: String },
-    TokenMissing,
-    SessionKeyMissing,
-    FailedRegex { obfuscated_line: String },
-    Io { path: PathBuf },
-    ConfigDirMissing,
 }
 
 impl fmt::Display for ApiError {
@@ -28,30 +15,6 @@ impl fmt::Display for ApiError {
             }
             Self::Decode { e, url } => {
                 write!(f, "Error decoding {}. {}", url, e)
-            }
-            Self::TokenMissing => {
-                write!(f, "API token could not be found. {}", RESTART_MSG)
-            }
-            Self::SessionKeyMissing => {
-                write!(f, "Session key could not be found. {}", RESTART_MSG)
-            }
-            Self::FailedRegex { obfuscated_line } => {
-                write!(
-                    f,
-                    "Preferences json regex failed on line: {}",
-                    obfuscated_line
-                )
-            }
-            Self::Io { path } => {
-                write!(
-                    f,
-                    "Error reading file: {}. {}",
-                    path.display(),
-                    install_msg()
-                )
-            }
-            Self::ConfigDirMissing => {
-                write!(f, "Configuration directory not found. {}", install_msg())
             }
         }
     }
@@ -73,8 +36,18 @@ pub enum RequestError {
     },
     FailedResponse {
         status: reqwest::StatusCode,
+        body: String,
         url: String,
     },
+    InvalidHeader {
+        e: reqwest::header::InvalidHeaderValue,
+    },
+}
+
+impl From<reqwest::header::InvalidHeaderValue> for RequestError {
+    fn from(e: reqwest::header::InvalidHeaderValue) -> Self {
+        RequestError::InvalidHeader { e }
+    }
 }
 
 impl Error for RequestError {}
@@ -85,12 +58,15 @@ impl fmt::Display for RequestError {
             Self::FailedRequest { e, url } => {
                 write!(f, "Failed request to {}. {}", url, e)
             }
-            Self::FailedResponse { status, url } => {
+            Self::FailedResponse { status, body, url } => {
                 write!(
                     f,
-                    "Failed response ({}) for: {}. {}",
-                    status, url, RESTART_MSG
+                    "Failed response (status: {}, body: {}) for {}",
+                    status, body, url
                 )
+            }
+            Self::InvalidHeader { e } => {
+                write!(f, "Invalid header: {}", e)
             }
         }
     }

@@ -3,26 +3,28 @@
 [![Crates.io](https://img.shields.io/crates/v/tastyworks.svg)](https://crates.io/crates/tastyworks)
 [![Docs Status](https://docs.rs/tastyworks/badge.svg)](https://docs.rs/tastyworks)
 
-Unofficial Tastyworks API for Rust.
+Unofficial tastyworks/tastytrade API for Rust. Requires [API access to be enabled](https://support.tastytrade.com/support/s/solutions/articles/43000700385) for your account.
 
 ## Example
 
 ```rust
-use tastyworks::Context;
+use tastyworks::Session;
 use num_traits::ToPrimitive;
 
 // Requests made by the API are asynchronous, so you must use a runtime such as `tokio`.
 #[tokio::main]
 async fn main() {
-   // See section below for instructions on finding your API token
-  let token = "your-token-here";
-  let context = Context::from_token(token);
+  let login = "username"; // or email
+  let password = "password";
+  let otp = Some("123456"); // 2FA code, may be None::<String>
+  let session = Session::from_credentials(login, password, otp)
+      .await.expect("Failed to login");
 
-  let accounts = tastyworks::accounts(&context)
+  let accounts = tastyworks::accounts(&session)
       .await.expect("Failed to fetch accounts");
   let account = accounts.first().expect("No accounts found");
 
-  let positions = tastyworks::positions(account, &context)
+  let positions = tastyworks::positions(account, &session)
       .await.expect("Failed to fetch positions");
 
   println!("Your active positions:");
@@ -45,9 +47,3 @@ async fn main() {
   }
 }
 ```
-
-## API Token
-
-Your API token can be found by logging in to https://trade.tastyworks.com/ while your browser developer tools are open on the `Network` tab.
-Select one of the requests made to https://api.tastyworks.com/ and in the `Request Headers` section that appears, find the `Authorization` header item.
-The value of this item can be used as your `token` in this API.

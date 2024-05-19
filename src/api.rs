@@ -41,6 +41,16 @@ pub enum InstrumentType {
     Unknown,
 }
 
+pub mod sessions {
+    use super::*;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    pub(crate) struct Response {
+        pub session_token: String,
+    }
+}
+
 pub mod accounts {
     use super::*;
 

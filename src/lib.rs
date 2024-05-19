@@ -1,23 +1,25 @@
-//! Unofficial Tastyworks API for Rust.
+//! Unofficial tastyworks/tastytrade API for Rust. Requires [API access to be enabled](https://support.tastytrade.com/support/s/solutions/articles/43000700385) for your account.
 //!
 //! ## Example
 //!
 //! ```rust
-//! use tastyworks::Context;
+//! use tastyworks::Session;
 //! use num_traits::ToPrimitive;
 //!
 //! // Requests made by the API are asynchronous, so you must use a runtime such as `tokio`.
 //! #[tokio::main]
 //! async fn main() {
-//!   // See section below for instructions on finding your API token
-//!   let token = "your-token-here";
-//!   let context = Context::from_token(token);
+//!   let login = "username"; // or email
+//!   let password = "password";
+//!   let otp = Some("123456"); // 2FA code, may be None::<String>
+//!   let session = Session::from_credentials(login, password, otp)
+//!       .await.expect("Failed to login");
 //!
-//!   let accounts = tastyworks::accounts(&context)
+//!   let accounts = tastyworks::accounts(&session)
 //!       .await.expect("Failed to fetch accounts");
 //!   let account = accounts.first().expect("No accounts found");
 //!
-//!   let positions = tastyworks::positions(account, &context)
+//!   let positions = tastyworks::positions(account, &session)
 //!       .await.expect("Failed to fetch positions");
 //!
 //!   println!("Your active positions:");
@@ -40,12 +42,6 @@
 //!   }
 //! }
 //! ```
-//!
-//! ## API Token
-//!
-//! Your API token can be found by logging in to https://trade.tastyworks.com/ while your browser developer tools are open on the `Network` tab.
-//! Select one of the requests made to https://api.tastyworks.com/ and in the `Request Headers` section that appears, find the `Authorization` header item.
-//! The value of this item can be used as your `token` in this API.
 
 use chrono::{DateTime, TimeZone, Utc};
 use futures::{stream, StreamExt};
@@ -53,24 +49,23 @@ use itertools::Itertools;
 
 pub mod api;
 pub mod common;
-mod constants;
-pub mod context;
 pub mod csv;
 pub mod errors;
 pub mod request;
+pub mod session;
 pub mod streamer;
 pub mod symbol;
 
 use crate::errors::*;
-pub use crate::{api::*, context::Context, request::*};
+pub use crate::{api::*, request::*, session::Session};
 
 const MAX_SYMBOL_SUMMARY_BATCH_SIZE: usize = 500;
 const PARALLEL_REQUESTS: usize = 10;
 
-pub async fn accounts(context: &Context) -> Result<Vec<accounts::Account>, ApiError> {
+pub async fn accounts(session: &Session) -> Result<Vec<accounts::Account>, ApiError> {
     let url = "customers/me/accounts";
     let response: api::Response<accounts::Response> =
-        deserialize_response(request(url, "", context).await?).await?;
+        deserialize_response(request(url, "", session).await?).await?;
     Ok(response
         .data
         .items
@@ -79,37 +74,37 @@ pub async fn accounts(context: &Context) -> Result<Vec<accounts::Account>, ApiEr
         .collect())
 }
 
-pub async fn watchlists(context: &Context) -> Result<Vec<watchlists::Item>, ApiError> {
+pub async fn watchlists(session: &Session) -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "watchlists";
     let response: api::Response<watchlists::Response> =
-        deserialize_response(request(url, "", context).await?).await?;
+        deserialize_response(request(url, "", session).await?).await?;
     Ok(response.data.items)
 }
 
-pub async fn public_watchlists(context: &Context) -> Result<Vec<watchlists::Item>, ApiError> {
+pub async fn public_watchlists(session: &Session) -> Result<Vec<watchlists::Item>, ApiError> {
     let url = "public-watchlists";
     let response: api::Response<watchlists::Response> =
-        deserialize_response(request(url, "", context).await?).await?;
+        deserialize_response(request(url, "", session).await?).await?;
     Ok(response.data.items)
 }
 
 pub async fn balances(
     account: &accounts::Account,
-    context: &Context,
+    session: &Session,
 ) -> Result<balances::Data, ApiError> {
     let url = format!("accounts/{}/balances", account.account_number);
     let response: api::Response<balances::Data> =
-        deserialize_response(request(&url, "", context).await?).await?;
+        deserialize_response(request(&url, "", session).await?).await?;
     Ok(response.data)
 }
 
 pub async fn positions(
     account: &accounts::Account,
-    context: &Context,
+    session: &Session,
 ) -> Result<Vec<positions::Item>, ApiError> {
     let url = format!("accounts/{}/positions", account.account_number);
     let response: api::Response<positions::Response> =
-        deserialize_response(request(&url, "", context).await?).await?;
+        deserialize_response(request(&url, "", session).await?).await?;
     Ok(response.data.items)
 }
 
@@ -118,7 +113,7 @@ pub async fn transactions<Tz: TimeZone>(
     start_date: DateTime<Tz>,
     end_date: DateTime<Tz>,
     prev_pagination: Option<Pagination>,
-    context: &Context,
+    session: &Session,
 ) -> Result<Option<(Vec<transactions::Item>, Option<Pagination>)>, ApiError> {
     let page_offset = if let Some(api::Pagination {
         page_offset,
@@ -142,14 +137,14 @@ pub async fn transactions<Tz: TimeZone>(
         page_offset
     );
     let response: api::Response<transactions::Response> =
-        deserialize_response(request(&url, &parameters, context).await?).await?;
+        deserialize_response(request(&url, &parameters, session).await?).await?;
 
     Ok(Some((response.data.items, response.pagination)))
 }
 
 pub async fn market_metrics(
     symbols: &[String],
-    context: &Context,
+    session: &Session,
 ) -> Result<Vec<market_metrics::Item>, ApiError> {
     let results = stream::iter(symbols.chunks(MAX_SYMBOL_SUMMARY_BATCH_SIZE).map(
         |batch| async move {
@@ -158,7 +153,7 @@ pub async fn market_metrics(
             let url_path = "market-metrics";
             let params_string = &format!("symbols={}", symbols);
             let response: Result<api::Response<market_metrics::Response>, ApiError> =
-                deserialize_response(request(url_path, params_string, context).await?).await;
+                deserialize_response(request(url_path, params_string, session).await?).await;
 
             response
         },
@@ -177,31 +172,10 @@ pub async fn market_metrics(
 
 pub async fn option_chains(
     symbol: &str,
-    context: &Context,
+    session: &Session,
 ) -> Result<Vec<option_chains::Item>, ApiError> {
     let url = format!("option-chains/{}/nested", symbol);
     let response: api::Response<option_chains::Response> =
-        deserialize_response(request(&url, "", context).await?).await?;
+        deserialize_response(request(&url, "", session).await?).await?;
     Ok(response.data.items)
-}
-
-async fn deserialize_response<T>(response: reqwest::Response) -> Result<T, ApiError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let url = response.url().clone();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| RequestError::FailedRequest {
-            e,
-            url: request::obfuscate_account_url(&url),
-        })?;
-
-    let de = &mut serde_json::Deserializer::from_slice(&bytes);
-    let result: Result<T, _> = serde_path_to_error::deserialize(de);
-    result.map_err(|e| ApiError::Decode {
-        e: Box::new(e),
-        url: request::obfuscate_account_url(&url),
-    })
 }

@@ -1,16 +1,19 @@
-use crate::{context::Context, errors::RequestError};
+use crate::{
+    errors::{ApiError, RequestError},
+    session::Session,
+};
 
 use lazy_static::lazy_static;
-use reqwest::{header, Client};
+use reqwest::{header, Client, Method};
 
 pub use reqwest::StatusCode;
 
+pub(crate) const BASE_URL: &str = "https://api.tastyworks.com";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 lazy_static! {
     static ref CLIENT: Client = Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:79.0) \
-             Gecko/20100101 Firefox/79.0"
-        )
+        .user_agent(format!("tasyworks-rs/{}", VERSION))
         .build()
         .unwrap();
 }
@@ -18,9 +21,9 @@ lazy_static! {
 pub async fn request(
     url_path: &str,
     params_string: &str,
-    context: &Context,
+    session: &Session,
 ) -> Result<reqwest::Response, RequestError> {
-    let mut api_token_header_value = header::HeaderValue::from_str(&context.token).unwrap();
+    let mut api_token_header_value = header::HeaderValue::from_str(&session.token).unwrap();
     api_token_header_value.set_sensitive(true);
 
     let params_string = if params_string.is_empty() {
@@ -29,33 +32,66 @@ pub async fn request(
         format!("?{}", params_string)
     };
 
-    let base_url = format!("https://api.tastyworks.com/{}", url_path);
-    let url = format!("{}{}", base_url, params_string);
-
-    let response = CLIENT
-        .get(&url)
+    let url = &format!("{}/{}{}", BASE_URL, url_path, params_string);
+    let response = build_request(&url, Method::GET)
         .header(header::AUTHORIZATION, api_token_header_value)
         .send()
         .await;
 
-    match response {
+    map_result(&url, response).await
+}
+
+pub(crate) fn build_request(url: &str, method: Method) -> reqwest::RequestBuilder {
+    CLIENT
+        .request(method, url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::ACCEPT, "application/json")
+}
+
+pub(crate) async fn map_result(
+    url: &str,
+    result: Result<reqwest::Response, reqwest::Error>,
+) -> Result<reqwest::Response, RequestError> {
+    match result {
         Err(e) => {
             return Err(RequestError::FailedRequest {
                 e,
-                url: obfuscate_account_url(&url),
+                url: obfuscate_account_url(url),
             });
         }
         Ok(response) => {
-            if response.status() != 200 {
+            if response.status() == 200 || response.status() == 201 {
+                Ok(response)
+            } else {
                 return Err(RequestError::FailedResponse {
                     status: response.status(),
-                    url: obfuscate_account_url(&url),
+                    body: response.text().await.unwrap_or_else(|e| e.to_string()),
+                    url: obfuscate_account_url(url),
                 });
-            } else {
-                Ok(response)
             }
         }
     }
+}
+
+pub(crate) async fn deserialize_response<T>(response: reqwest::Response) -> Result<T, ApiError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let url = response.url().clone();
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| RequestError::FailedRequest {
+            e,
+            url: obfuscate_account_url(&url),
+        })?;
+
+    let de = &mut serde_json::Deserializer::from_slice(&bytes);
+    let result: Result<T, _> = serde_path_to_error::deserialize(de);
+    result.map_err(|e| ApiError::Decode {
+        e: Box::new(e),
+        url: obfuscate_account_url(&url),
+    })
 }
 
 pub(crate) fn obfuscate_account_url(url: impl AsRef<str>) -> String {

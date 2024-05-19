@@ -1,4 +1,4 @@
-use crate::{api, context::Context, request::request};
+use crate::{api, request::request, session::Session};
 
 use itertools::Itertools;
 use num_rational::Rational64;
@@ -21,7 +21,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn new(context: &Context) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(session: &Session) -> Result<Self, Box<dyn Error>> {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "kebab-case")]
         struct Data {
@@ -29,7 +29,7 @@ impl Client {
             token: String,
         }
 
-        let response = request("quote-streamer-tokens", "", context).await?;
+        let response = request("quote-streamer-tokens", "", session).await?;
         let api::Response { data, .. } = response.json::<api::Response<Data>>().await?;
 
         let base_url = format!("{}/cometd", data.websocket_url).replace("https", "wss");
