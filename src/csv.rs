@@ -163,7 +163,7 @@ mod tests {
     fn test_trade_expiration_date_csv_from_str() {
         assert_eq!(
             TransactionExpiration::from_str("7/31/20").unwrap(),
-            TransactionExpiration(NaiveDate::from_ymd(2020, 7, 31))
+            TransactionExpiration(NaiveDate::from_ymd_opt(2020, 7, 31).unwrap())
         );
     }
 }
