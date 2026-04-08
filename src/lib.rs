@@ -44,7 +44,7 @@
 //! ```
 
 use chrono::{DateTime, TimeZone, Utc};
-use futures::{stream, StreamExt};
+use futures::{StreamExt, stream};
 use itertools::Itertools;
 
 pub mod api;

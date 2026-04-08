@@ -4,7 +4,7 @@ use crate::{
     request::*,
 };
 
-use reqwest::{header, Method};
+use reqwest::{Method, header};
 
 use std::collections::HashMap;
 

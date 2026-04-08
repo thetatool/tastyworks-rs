@@ -1,7 +1,7 @@
 use crate::{
     common::{
-        deserialize_integer_or_string_as_decimal, optional_string_serialize, string_serialize,
-        Decimal, ExpirationDate, OptionType,
+        Decimal, ExpirationDate, OptionType, deserialize_integer_or_string_as_decimal,
+        optional_string_serialize, string_serialize,
     },
     csv,
     symbol::OptionSymbol,
@@ -465,15 +465,15 @@ pub mod transactions {
         pub fn fees(&self) -> Rational64 {
             self.clearing_fees_effect
                 .map(|v| v.apply(self.clearing_fees.unwrap().0))
-                .unwrap_or_else(|| Rational64::zero())
+                .unwrap_or_else(Rational64::zero)
                 + self
                     .regulatory_fees_effect
                     .map(|v| v.apply(self.regulatory_fees.unwrap().0))
-                    .unwrap_or_else(|| Rational64::zero())
+                    .unwrap_or_else(Rational64::zero)
                 + self
                     .proprietary_index_option_fees_effect
                     .map(|v| v.apply(self.proprietary_index_option_fees.unwrap().0))
-                    .unwrap_or_else(|| Rational64::zero())
+                    .unwrap_or_else(Rational64::zero)
         }
 
         pub fn expiration_date(&self) -> ExpirationDate {

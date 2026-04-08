@@ -1,5 +1,5 @@
 use crate::{
-    common::{optional_string_serialize, string_serialize, Decimal, ExpirationDate, OptionType},
+    common::{Decimal, ExpirationDate, OptionType, optional_string_serialize, string_serialize},
     symbol::{self, OptionSymbol},
 };
 
@@ -41,8 +41,7 @@ impl Position {
         assert!(self.days_open.chars().nth(idx) == Some('d'));
         self.days_open
             .get(..idx)
-            .map(|s| i32::from_str(s).ok())
-            .flatten()
+            .and_then(|s| i32::from_str(s).ok())
             .unwrap_or_else(|| panic!("Could not parse days open: {}", self.days_open))
     }
 }

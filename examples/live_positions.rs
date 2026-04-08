@@ -1,14 +1,15 @@
 use num_rational::Rational64;
 use num_traits::ToPrimitive;
 use tastyworks::{
+    Session,
     api::{self, InstrumentType},
     streamer::SubscriptionValue,
-    symbol, Session,
+    symbol,
 };
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{stdin, stdout, Write};
+use std::io::{Write, stdin, stdout};
 use std::time::Duration;
 
 #[tokio::main]

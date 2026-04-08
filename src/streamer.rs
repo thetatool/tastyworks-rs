@@ -4,18 +4,20 @@ use crate::{api, request::request, session::Session};
 
 use num_rational::Rational64;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::net::TcpStream;
 use std::time::{Duration, Instant};
+use tungstenite::stream::MaybeTlsStream;
 use url::Url;
 
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 const QUOTE_TOKENS_ENDPOINT: &str = "api-quote-tokens";
 
-type Socket = tungstenite::protocol::WebSocket<tungstenite::client::AutoStream>;
+type Socket = tungstenite::protocol::WebSocket<MaybeTlsStream<TcpStream>>;
 
 pub struct Client {
     base_url: String,
@@ -168,8 +170,7 @@ impl Transport {
 
     fn send_text(&mut self, msg: &str) -> Result<(), StreamerError> {
         log::debug!("Sending message: {}", msg);
-        self.socket
-            .write_message(tungstenite::Message::Text(msg.to_string()))?;
+        self.socket.send(tungstenite::Message::text(msg))?;
         Ok(())
     }
 
@@ -192,13 +193,9 @@ impl Transport {
         blocking: bool,
     ) -> Result<Option<tungstenite::Message>, StreamerError> {
         // see https://github.com/snapview/tungstenite-rs/issues/103
-        let stream = match self.socket.get_mut() {
-            tungstenite::stream::Stream::Plain(stream) => stream,
-            tungstenite::stream::Stream::Tls(stream) => stream.get_mut(),
-        };
-        stream.set_nonblocking(!blocking)?;
+        socket_tcp_stream_mut(self.socket.get_mut()).set_nonblocking(!blocking)?;
 
-        match self.socket.read_message() {
+        match self.socket.read() {
             Ok(tungstenite::Message::Close(_)) => Err(StreamerError::Disconnected),
             Ok(msg) => {
                 log::debug!("Received message: {}", msg);
@@ -207,8 +204,19 @@ impl Transport {
             Err(tungstenite::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 Ok(None)
             }
-            Err(e) => Err(e.into()),
+            Err(e) => Err(StreamerError::from(e)),
         }
+    }
+}
+
+fn socket_tcp_stream_mut(stream: &mut MaybeTlsStream<TcpStream>) -> &mut TcpStream {
+    match stream {
+        MaybeTlsStream::Plain(stream) => stream,
+        #[cfg(feature = "native-tls")]
+        MaybeTlsStream::NativeTls(stream) => stream.get_mut(),
+        #[cfg(feature = "rustls-tls")]
+        MaybeTlsStream::Rustls(stream) => &mut stream.sock,
+        _ => unreachable!("unsupported tungstenite stream variant"),
     }
 }
 
@@ -570,7 +578,7 @@ mod protocol {
 
         let name = feed_data
             .data
-            .get(0)
+            .first()
             .and_then(|name| name.as_str())
             .map(String::from)
             .ok_or_else(|| StreamerError::ResponseParse("name".to_string()))?;
@@ -701,13 +709,11 @@ mod tests {
             let (stream, _) = listener.accept().unwrap();
             let mut socket = tungstenite::accept(stream).unwrap();
             let read_text_message = |socket: &mut tungstenite::WebSocket<std::net::TcpStream>| {
-                socket.read_message().unwrap().into_text().unwrap()
+                socket.read().unwrap().into_text().unwrap()
             };
             let send_text_message = |socket: &mut tungstenite::WebSocket<std::net::TcpStream>,
                                      message: &str| {
-                socket
-                    .write_message(tungstenite::Message::Text(message.to_string()))
-                    .unwrap();
+                socket.send(tungstenite::Message::text(message)).unwrap();
             };
 
             let _ = read_text_message(&mut socket);

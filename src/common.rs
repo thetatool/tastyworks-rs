@@ -1,7 +1,7 @@
 pub use options_common::{Decimal, ExpirationDate, OptionType};
 
 use num_rational::Rational64;
-use serde::{de, Deserialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serializer, de};
 
 use std::convert::TryInto;
 use std::fmt::{self, Display};

@@ -3,20 +3,21 @@ use crate::{
     session::Session,
 };
 
-use lazy_static::lazy_static;
-use reqwest::{header, Client, Method};
+use reqwest::{Client, Method, header};
+
+use std::sync::LazyLock;
 
 pub use reqwest::StatusCode;
 
 pub(crate) const BASE_URL: &str = "https://api.tastyworks.com";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-lazy_static! {
-    static ref CLIENT: Client = Client::builder()
+static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
         .user_agent(format!("tasyworks-rs/{}", VERSION))
         .build()
-        .unwrap();
-}
+        .unwrap()
+});
 
 pub async fn request(
     url_path: &str,
@@ -32,7 +33,7 @@ pub async fn request(
         format!("?{}", params_string)
     };
 
-    let url = &format!("{}/{}{}", BASE_URL, url_path, params_string);
+    let url = format!("{}/{}{}", BASE_URL, url_path, params_string);
     let response = build_request(&url, Method::GET)
         .header(header::AUTHORIZATION, api_token_header_value)
         .send()
@@ -53,21 +54,19 @@ pub(crate) async fn map_result(
     result: Result<reqwest::Response, reqwest::Error>,
 ) -> Result<reqwest::Response, RequestError> {
     match result {
-        Err(e) => {
-            return Err(RequestError::FailedRequest {
-                e,
-                url: obfuscate_account_url(url),
-            });
-        }
+        Err(e) => Err(RequestError::FailedRequest {
+            e,
+            url: obfuscate_account_url(url),
+        }),
         Ok(response) => {
             if response.status() == 200 || response.status() == 201 {
                 Ok(response)
             } else {
-                return Err(RequestError::FailedResponse {
+                Err(RequestError::FailedResponse {
                     status: response.status(),
                     body: response.text().await.unwrap_or_else(|e| e.to_string()),
                     url: obfuscate_account_url(url),
-                });
+                })
             }
         }
     }
