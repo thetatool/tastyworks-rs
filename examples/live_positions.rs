@@ -1,7 +1,9 @@
+#[path = "common/auth.rs"]
+mod auth;
+
 use num_rational::Rational64;
 use num_traits::ToPrimitive;
 use tastyworks::{
-    Session,
     api::{self, InstrumentType},
     streamer::SubscriptionValue,
     symbol,
@@ -9,12 +11,12 @@ use tastyworks::{
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::{Write, stdin, stdout};
+use std::io::{Write, stdout};
 use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let session = login().await?;
+    let session = auth::session_from_env_or_login("live_positions").await?;
 
     let account = tastyworks::accounts(&session)
         .await?
@@ -79,25 +81,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-}
-
-async fn login() -> Result<Session, Box<dyn Error>> {
-    let mut login = String::new();
-    print!("login: ");
-    stdout().flush()?;
-    stdin().read_line(&mut login)?;
-    let login = login.trim_end().to_string();
-
-    let password = rpassword::prompt_password("password (hidden): ")?;
-
-    let mut otp = String::new();
-    print!("2fa (press enter if none): ");
-    stdout().flush()?;
-    stdin().read_line(&mut otp)?;
-    let otp = otp.trim_end().to_string();
-    let otp = if otp.is_empty() { None } else { Some(otp) };
-
-    Ok(Session::from_credentials(login, password, otp).await?)
 }
 
 fn quote_symbols_for_positions(positions: &[api::positions::Item]) -> Vec<String> {
