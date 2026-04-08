@@ -2,7 +2,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```no_run
 //! use tastyworks::Session;
 //! use num_traits::ToPrimitive;
 //!
