@@ -711,6 +711,7 @@ pub mod option_chains {
         pub root_symbol: String,
         pub option_chain_type: String,
         pub shares_per_contract: i32,
+        #[serde(default)] // optional
         pub deliverables: Vec<Deliverable>,
         pub expirations: Vec<Expiration>,
     }
@@ -755,6 +756,8 @@ pub mod option_chains {
         Regular,
         Weekly,
         Quarterly,
+        #[serde(rename = "End-Of-Month")]
+        EndOfMonth,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
