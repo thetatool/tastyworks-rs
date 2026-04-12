@@ -70,27 +70,41 @@ impl Client {
         self.transport.is_some()
     }
 
-    pub fn add_subscription(
+    pub fn add_symbol_subscriptions(
         &mut self,
-        name: &str,
+        kind: SymbolSubscriptionKind,
         fields: &[String],
         symbols: &[String],
     ) -> Result<(), StreamerError> {
-        if self.feed_channel.is_none() {
-            let feed_channel = self.open_feed_channel(1)?;
-            self.feed_channel = Some(feed_channel);
+        if symbols.is_empty() {
+            return Ok(());
         }
 
-        let feed_channel = self.feed_channel.expect("missing feed channel");
+        let feed_channel = self.ensure_feed_channel()?;
+        self.ensure_feed_setup(feed_channel, kind.name(), fields)?;
 
-        if !self.subscription_fields.contains_key(name) {
-            self.transport_mut()?
-                .send_json(&protocol::feed_setup_message(feed_channel, name, fields))?;
-            self.subscription_fields
-                .insert(name.to_string(), fields.to_vec());
+        for message in
+            protocol::feed_symbol_subscription_messages(feed_channel, kind.name(), symbols)
+        {
+            self.transport_mut()?.send_text(&message)?;
         }
 
-        for message in protocol::feed_subscription_messages(feed_channel, name, symbols) {
+        Ok(())
+    }
+
+    pub fn add_candle_subscriptions(
+        &mut self,
+        fields: &[String],
+        subscriptions: &[CandleSubscription],
+    ) -> Result<(), StreamerError> {
+        if subscriptions.is_empty() {
+            return Ok(());
+        }
+
+        let feed_channel = self.ensure_feed_channel()?;
+        self.ensure_feed_setup(feed_channel, "Candle", fields)?;
+
+        for message in protocol::feed_candle_subscription_messages(feed_channel, subscriptions) {
             self.transport_mut()?.send_text(&message)?;
         }
 
@@ -114,6 +128,32 @@ impl Client {
         self.keep_alive()?;
 
         Ok(new_subscription_data)
+    }
+
+    fn ensure_feed_channel(&mut self) -> Result<i32, StreamerError> {
+        if self.feed_channel.is_none() {
+            let feed_channel = self.open_feed_channel(1)?;
+            self.feed_channel = Some(feed_channel);
+        }
+
+        Ok(self.feed_channel.expect("missing feed channel"))
+    }
+
+    fn ensure_feed_setup(
+        &mut self,
+        feed_channel: i32,
+        name: &str,
+        fields: &[String],
+    ) -> Result<(), StreamerError> {
+        if self.subscription_fields.contains_key(name) {
+            return Ok(());
+        }
+
+        self.transport_mut()?
+            .send_json(&protocol::feed_setup_message(feed_channel, name, fields))?;
+        self.subscription_fields
+            .insert(name.to_string(), fields.to_vec());
+        Ok(())
     }
 
     fn reset_connection_state(&mut self) {
@@ -371,6 +411,257 @@ impl From<std::io::Error> for StreamerError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CandlePeriod {
+    value: u32,
+    unit: CandleUnit,
+}
+
+impl CandlePeriod {
+    pub const fn minutes(value: u32) -> Self {
+        Self::new(value, CandleUnit::Minute)
+    }
+
+    pub const fn hours(value: u32) -> Self {
+        Self::new(value, CandleUnit::Hour)
+    }
+
+    pub const fn days(value: u32) -> Self {
+        Self::new(value, CandleUnit::Day)
+    }
+
+    pub const fn weeks(value: u32) -> Self {
+        Self::new(value, CandleUnit::Week)
+    }
+
+    pub const fn months(value: u32) -> Self {
+        Self::new(value, CandleUnit::Month)
+    }
+
+    pub fn parse_dxlink(code: &str) -> Option<Self> {
+        let unit_code = code.chars().last()?;
+        let value_len = code.len().checked_sub(unit_code.len_utf8())?;
+        let value = if value_len == 0 {
+            1
+        } else {
+            code[..value_len].parse::<u32>().ok()?
+        };
+        if value == 0 {
+            return None;
+        }
+
+        let unit = match unit_code {
+            'm' => CandleUnit::Minute,
+            'h' => CandleUnit::Hour,
+            'd' => CandleUnit::Day,
+            'w' => CandleUnit::Week,
+            'M' => CandleUnit::Month,
+            _ => return None,
+        };
+        Some(Self::new(value, unit))
+    }
+
+    const fn new(value: u32, unit: CandleUnit) -> Self {
+        assert!(value > 0, "candle period must be greater than zero");
+        Self { value, unit }
+    }
+}
+
+impl fmt::Display for CandlePeriod {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{}", self.value, self.unit.dxlink_code())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum CandleUnit {
+    Minute,
+    Hour,
+    Day,
+    Week,
+    Month,
+}
+
+impl CandleUnit {
+    const fn dxlink_code(self) -> char {
+        match self {
+            Self::Minute => 'm',
+            Self::Hour => 'h',
+            Self::Day => 'd',
+            Self::Week => 'w',
+            Self::Month => 'M',
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CandlePrice {
+    #[default]
+    Last,
+    Mark,
+}
+
+impl CandlePrice {
+    fn dxlink_code(self) -> Option<char> {
+        match self {
+            Self::Last => None,
+            Self::Mark => Some('m'),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CandleSubscription {
+    pub symbol: String,
+    pub period: CandlePeriod,
+    pub from_time: i64,
+    pub extended_trading_hours: bool,
+    pub price: CandlePrice,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CandleStreamKey {
+    pub symbol: String,
+    pub period: CandlePeriod,
+    pub extended_trading_hours: bool,
+    pub price: CandlePrice,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CandleStreamKeyParseError;
+
+impl fmt::Display for CandleStreamKeyParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid candle event symbol")
+    }
+}
+
+impl Error for CandleStreamKeyParseError {}
+
+impl CandleSubscription {
+    pub fn new(symbol: impl Into<String>, period: CandlePeriod, from_time: i64) -> Self {
+        Self {
+            symbol: symbol.into(),
+            period,
+            from_time,
+            extended_trading_hours: false,
+            price: CandlePrice::Last,
+        }
+    }
+
+    pub fn with_extended_trading_hours(mut self, extended_trading_hours: bool) -> Self {
+        self.extended_trading_hours = extended_trading_hours;
+        self
+    }
+
+    pub fn with_price(mut self, price: CandlePrice) -> Self {
+        self.price = price;
+        self
+    }
+
+    fn feed_symbol(&self) -> String {
+        format_candle_symbol(
+            &self.symbol,
+            self.period,
+            self.extended_trading_hours,
+            self.price,
+        )
+    }
+
+    pub fn stream_key(&self) -> CandleStreamKey {
+        CandleStreamKey {
+            symbol: self.symbol.clone(),
+            period: self.period,
+            extended_trading_hours: self.extended_trading_hours,
+            price: self.price,
+        }
+    }
+}
+
+impl TryFrom<&str> for CandleStreamKey {
+    type Error = CandleStreamKeyParseError;
+
+    fn try_from(event_symbol: &str) -> Result<Self, Self::Error> {
+        let Some((symbol, candle_spec)) = event_symbol.split_once("{=") else {
+            return Err(CandleStreamKeyParseError);
+        };
+        let period_end = candle_spec.find([',', '}']).unwrap_or(candle_spec.len());
+        let period_code = &candle_spec[..period_end];
+        let Some(period) = CandlePeriod::parse_dxlink(period_code) else {
+            return Err(CandleStreamKeyParseError);
+        };
+
+        let mut extended_trading_hours = false;
+        let mut price = CandlePrice::Last;
+        let attributes = candle_spec[period_end..].trim_end_matches('}');
+        for attribute in attributes
+            .split(',')
+            .filter(|attribute| !attribute.is_empty())
+        {
+            match attribute {
+                "tho=true" => extended_trading_hours = true,
+                "a=m" => price = CandlePrice::Mark,
+                _ => return Err(CandleStreamKeyParseError),
+            }
+        }
+
+        Ok(CandleStreamKey {
+            symbol: symbol.to_string(),
+            period,
+            extended_trading_hours,
+            price,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolSubscriptionKind {
+    Quote,
+    Trade,
+    TradeEth,
+    Greeks,
+    Profile,
+    Summary,
+    TimeAndSale,
+    TheoPrice,
+}
+
+impl SymbolSubscriptionKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Quote => "Quote",
+            Self::Trade => "Trade",
+            Self::TradeEth => "TradeETH",
+            Self::Greeks => "Greeks",
+            Self::Profile => "Profile",
+            Self::Summary => "Summary",
+            Self::TimeAndSale => "TimeAndSale",
+            Self::TheoPrice => "TheoPrice",
+        }
+    }
+}
+
+fn format_candle_symbol(
+    symbol: &str,
+    period: CandlePeriod,
+    extended_trading_hours: bool,
+    price: CandlePrice,
+) -> String {
+    let mut candle_symbol = format!("{symbol}{{={period}");
+
+    if extended_trading_hours {
+        candle_symbol.push_str(",tho=true");
+    }
+
+    if let Some(price_code) = price.dxlink_code() {
+        candle_symbol.push_str(",a=");
+        candle_symbol.push(price_code);
+    }
+
+    candle_symbol.push('}');
+    candle_symbol
+}
+
 mod protocol {
     use super::*;
 
@@ -411,6 +702,8 @@ mod protocol {
         #[serde(rename = "type")]
         event_type: &'a str,
         symbol: &'a str,
+        #[serde(rename = "fromTime", skip_serializing_if = "Option::is_none")]
+        from_time: Option<i64>,
     }
 
     #[derive(Debug)]
@@ -519,21 +812,43 @@ mod protocol {
         })
     }
 
-    pub(super) fn feed_subscription_messages(
+    pub(super) fn feed_symbol_subscription_messages(
         channel: i32,
-        name: &str,
+        event_type: &str,
         symbols: &[String],
+    ) -> Vec<String> {
+        feed_subscription_messages(
+            channel,
+            symbols
+                .iter()
+                .map(|symbol| serialize_subscription_entry(event_type, symbol, None)),
+        )
+    }
+
+    pub(super) fn feed_candle_subscription_messages(
+        channel: i32,
+        subscriptions: &[CandleSubscription],
+    ) -> Vec<String> {
+        let entries = subscriptions.iter().map(|subscription| {
+            serialize_subscription_entry(
+                "Candle",
+                &subscription.feed_symbol(),
+                Some(subscription.from_time),
+            )
+        });
+
+        feed_subscription_messages(channel, entries)
+    }
+
+    fn feed_subscription_messages(
+        channel: i32,
+        entries: impl IntoIterator<Item = String>,
     ) -> Vec<String> {
         let mut messages = vec![];
         let mut add = vec![];
         let mut size = feed_subscription_message(channel, &[]).len();
 
-        for symbol in symbols {
-            let entry = serde_json::to_string(&SubscriptionEntry {
-                event_type: name,
-                symbol,
-            })
-            .expect("feed subscription entry should serialize");
+        for entry in entries {
             // Every entry after the first adds one extra byte for the separating comma in `add:[...]`.
             let entry_size = entry.len() + usize::from(!add.is_empty());
 
@@ -552,6 +867,19 @@ mod protocol {
         }
 
         messages
+    }
+
+    fn serialize_subscription_entry(
+        event_type: &str,
+        symbol: &str,
+        from_time: Option<i64>,
+    ) -> String {
+        serde_json::to_string(&SubscriptionEntry {
+            event_type,
+            symbol,
+            from_time,
+        })
+        .expect("feed subscription entry should serialize")
     }
 
     pub(super) fn keepalive_message() -> Value {
@@ -687,14 +1015,70 @@ mod tests {
     #[test]
     fn test_feed_subscription_messages_chunk_by_serialized_size() {
         let large_symbol = "A".repeat(5000);
-        let messages =
-            protocol::feed_subscription_messages(3, "Quote", &[large_symbol.clone(), large_symbol]);
+        let messages = protocol::feed_symbol_subscription_messages(
+            3,
+            "Quote",
+            &[large_symbol.clone(), large_symbol],
+        );
+
         assert_eq!(messages.len(), 2);
         let message_0 = serde_json::from_str::<Value>(&messages[0]).unwrap();
         let message_1 = serde_json::from_str::<Value>(&messages[1]).unwrap();
 
         assert_eq!(message_0["add"].as_array().unwrap().len(), 1);
         assert_eq!(message_1["add"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_feed_subscription_messages_serialize_candle_from_time_and_symbol() {
+        let subscriptions =
+            [
+                CandleSubscription::new("SPY", CandlePeriod::minutes(5), 1_775_192_400_000)
+                    .with_extended_trading_hours(true)
+                    .with_price(CandlePrice::Mark),
+            ];
+        let messages = protocol::feed_candle_subscription_messages(1, &subscriptions);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).unwrap(),
+            json!({
+                "type": "FEED_SUBSCRIPTION",
+                "channel": 1,
+                "add": [{
+                    "type": "Candle",
+                    "symbol": "SPY{=5m,tho=true,a=m}",
+                    "fromTime": 1_775_192_400_000_i64,
+                }],
+            })
+        );
+    }
+
+    #[test]
+    fn test_candle_period_parse_dxlink_codes() {
+        assert_eq!(CandlePeriod::parse_dxlink("d"), Some(CandlePeriod::days(1)));
+        assert_eq!(
+            CandlePeriod::parse_dxlink("1d"),
+            Some(CandlePeriod::days(1))
+        );
+        assert_eq!(
+            CandlePeriod::parse_dxlink("5m"),
+            Some(CandlePeriod::minutes(5))
+        );
+        assert_eq!(CandlePeriod::parse_dxlink("0d"), None);
+        assert_eq!(CandlePeriod::parse_dxlink("foo"), None);
+    }
+
+    #[test]
+    fn test_candle_subscription_stream_key_matches_decoded_event_symbol() {
+        let subscription = CandleSubscription::new("SPY", CandlePeriod::days(1), 123)
+            .with_extended_trading_hours(true)
+            .with_price(CandlePrice::Mark);
+
+        assert_eq!(
+            subscription.stream_key(),
+            CandleStreamKey::try_from("SPY{=d,tho=true,a=m}").unwrap()
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use num_rational::Rational64;
 use num_traits::ToPrimitive;
 use tastyworks::{
     api::{self, InstrumentType},
-    streamer::SubscriptionValue,
+    streamer::{self, SubscriptionValue, SymbolSubscriptionKind},
     symbol,
 };
 
@@ -37,9 +37,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "askPrice".to_string(),
     ];
 
-    let mut streamer = tastyworks::streamer::Client::new(&session).await?;
+    let mut streamer = streamer::Client::new(&session).await?;
     streamer.connect()?;
-    streamer.add_subscription("Quote", &quote_fields, &quote_symbols)?;
+    streamer.add_symbol_subscriptions(
+        SymbolSubscriptionKind::Quote,
+        &quote_fields,
+        &quote_symbols,
+    )?;
 
     let mut quotes = HashMap::new();
     render_positions(&positions, &quotes);
@@ -51,7 +55,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 eprintln!("streamer disconnected: {}", err);
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 streamer.connect()?;
-                streamer.add_subscription("Quote", &quote_fields, &quote_symbols)?;
+                streamer.add_symbol_subscriptions(
+                    SymbolSubscriptionKind::Quote,
+                    &quote_fields,
+                    &quote_symbols,
+                )?;
                 continue;
             }
             Err(err) => return Err(err.into()),

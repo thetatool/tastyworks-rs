@@ -2,7 +2,10 @@
 mod auth;
 
 use chrono::{Duration as ChronoDuration, Utc};
-use tastyworks::{api, streamer};
+use tastyworks::{
+    api,
+    streamer::{self, SymbolSubscriptionKind},
+};
 
 use std::error::Error;
 use std::process;
@@ -243,7 +246,7 @@ async fn run_streamer_smoke_test(
         .iter()
         .map(|symbol| (*symbol).to_string())
         .collect::<Vec<_>>();
-    client.add_subscription("Quote", &fields, &symbols)?;
+    client.add_symbol_subscriptions(SymbolSubscriptionKind::Quote, &fields, &symbols)?;
 
     let deadline = Instant::now() + STREAMER_TIMEOUT;
     while Instant::now() < deadline {
