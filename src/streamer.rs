@@ -6,7 +6,7 @@ use num_rational::Rational64;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::net::TcpStream;
@@ -15,6 +15,7 @@ use tungstenite::stream::MaybeTlsStream;
 use url::Url;
 
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+const MAX_POLL_DURATION: Duration = Duration::from_millis(100);
 const QUOTE_TOKENS_ENDPOINT: &str = "api-quote-tokens";
 
 type Socket = tungstenite::protocol::WebSocket<MaybeTlsStream<TcpStream>>;
@@ -23,8 +24,12 @@ pub struct Client {
     base_url: String,
     token: String,
     transport: Option<Transport>,
-    feed_channel: Option<i32>,
+    ticker_channel: Option<i32>,
+    history_channel: Option<i32>,
     subscription_fields: HashMap<String, Vec<String>>,
+    // Opening a channel requires a blocking read. Preserve frames for existing channels that
+    // arrive before the CHANNEL_OPENED response so poll_subscriptions can process them later.
+    pending_messages: VecDeque<String>,
     last_keepalive_at: Option<Instant>,
 }
 
@@ -44,8 +49,10 @@ impl Client {
             base_url: data.dxlink_url,
             token: data.token,
             transport: None,
-            feed_channel: None,
+            ticker_channel: None,
+            history_channel: None,
             subscription_fields: HashMap::new(),
+            pending_messages: VecDeque::new(),
             last_keepalive_at: None,
         })
     }
@@ -56,6 +63,8 @@ impl Client {
         let mut transport = Transport::connect(&self.base_url)?;
         complete_handshake(&mut transport, &self.token)?;
 
+        // Feed channels open on their first subscription. This keeps ticker-only connection setup
+        // independent of the separate history service.
         self.transport = Some(transport);
         self.last_keepalive_at = Some(Instant::now());
 
@@ -80,12 +89,41 @@ impl Client {
             return Ok(());
         }
 
-        let feed_channel = self.ensure_feed_channel()?;
+        let feed_channel = self.ensure_ticker_channel()?;
         self.ensure_feed_setup(feed_channel, kind.name(), fields)?;
 
-        for message in
-            protocol::feed_symbol_subscription_messages(feed_channel, kind.name(), symbols)
-        {
+        for message in protocol::feed_symbol_subscription_messages(
+            feed_channel,
+            kind.name(),
+            symbols,
+            protocol::SubscriptionAction::Add,
+        ) {
+            self.transport_mut()?.send_text(&message)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_symbol_subscriptions(
+        &mut self,
+        kind: SymbolSubscriptionKind,
+        symbols: &[String],
+    ) -> Result<(), StreamerError> {
+        if symbols.is_empty() {
+            return Ok(());
+        }
+
+        self.transport_mut()?;
+        let Some(feed_channel) = self.ticker_channel else {
+            // Without a ticker channel, this client cannot have symbol subscriptions to remove.
+            return Ok(());
+        };
+        for message in protocol::feed_symbol_subscription_messages(
+            feed_channel,
+            kind.name(),
+            symbols,
+            protocol::SubscriptionAction::Remove,
+        ) {
             self.transport_mut()?.send_text(&message)?;
         }
 
@@ -101,10 +139,38 @@ impl Client {
             return Ok(());
         }
 
-        let feed_channel = self.ensure_feed_channel()?;
+        let feed_channel = self.ensure_history_channel()?;
         self.ensure_feed_setup(feed_channel, "Candle", fields)?;
 
-        for message in protocol::feed_candle_subscription_messages(feed_channel, subscriptions) {
+        for message in protocol::feed_candle_subscription_messages(
+            feed_channel,
+            subscriptions,
+            protocol::SubscriptionAction::Add,
+        ) {
+            self.transport_mut()?.send_text(&message)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_candle_subscriptions(
+        &mut self,
+        subscriptions: &[CandleSubscription],
+    ) -> Result<(), StreamerError> {
+        if subscriptions.is_empty() {
+            return Ok(());
+        }
+
+        self.transport_mut()?;
+        let Some(feed_channel) = self.history_channel else {
+            // Without a history channel, this client cannot have candle subscriptions to remove.
+            return Ok(());
+        };
+        for message in protocol::feed_candle_subscription_messages(
+            feed_channel,
+            subscriptions,
+            protocol::SubscriptionAction::Remove,
+        ) {
             self.transport_mut()?.send_text(&message)?;
         }
 
@@ -115,13 +181,26 @@ impl Client {
         &mut self,
     ) -> Result<HashMap<String, SubscriptionData>, StreamerError> {
         let mut new_subscription_data = HashMap::new();
-        while let Some(msg_json) = self.transport_mut()?.read_text_message(false)? {
-            if !accumulate_feed_data(
+        let started_at = Instant::now();
+        loop {
+            let msg_json = match self.pending_messages.pop_front() {
+                Some(msg_json) => msg_json,
+                None => match self.transport_mut()?.read_text_message(false)? {
+                    Some(msg_json) => msg_json,
+                    None => break,
+                },
+            };
+            accumulate_feed_data(
                 &self.subscription_fields,
                 &mut new_subscription_data,
                 &msg_json,
-            )? {
-                continue;
+            )?;
+
+            // During active trading, new frames can arrive faster than this nonblocking loop can
+            // drain them. Limit each poll so the caller can apply updates, change subscriptions,
+            // and call this client often enough to send keepalives.
+            if started_at.elapsed() >= MAX_POLL_DURATION {
+                break;
             }
         }
 
@@ -130,13 +209,24 @@ impl Client {
         Ok(new_subscription_data)
     }
 
-    fn ensure_feed_channel(&mut self) -> Result<i32, StreamerError> {
-        if self.feed_channel.is_none() {
-            let feed_channel = self.open_feed_channel(1)?;
-            self.feed_channel = Some(feed_channel);
+    fn ensure_ticker_channel(&mut self) -> Result<i32, StreamerError> {
+        if let Some(channel) = self.ticker_channel {
+            return Ok(channel);
         }
 
-        Ok(self.feed_channel.expect("missing feed channel"))
+        let channel = self.open_feed_channel(1, "TICKER")?;
+        self.ticker_channel = Some(channel);
+        Ok(channel)
+    }
+
+    fn ensure_history_channel(&mut self) -> Result<i32, StreamerError> {
+        if let Some(channel) = self.history_channel {
+            return Ok(channel);
+        }
+
+        let channel = self.open_feed_channel(3, "HISTORY")?;
+        self.history_channel = Some(channel);
+        Ok(channel)
     }
 
     fn ensure_feed_setup(
@@ -158,23 +248,31 @@ impl Client {
 
     fn reset_connection_state(&mut self) {
         self.transport = None;
-        self.feed_channel = None;
+        self.ticker_channel = None;
+        self.history_channel = None;
         self.subscription_fields.clear();
+        self.pending_messages.clear();
         self.last_keepalive_at = None;
     }
 
-    fn open_feed_channel(&mut self, channel: i32) -> Result<i32, StreamerError> {
+    fn open_feed_channel(&mut self, channel: i32, contract: &str) -> Result<i32, StreamerError> {
         self.transport_mut()?
-            .send_json(&protocol::feed_channel_request_message(channel))?;
-        let msg_json = self.transport_mut()?.read_required_text_message()?;
-        protocol::parse_channel_opened_message(&msg_json)
+            .send_json(&protocol::feed_channel_request_message(channel, contract))?;
+        loop {
+            let msg_json = self.transport_mut()?.read_required_text_message()?;
+            if let Some(opened_channel) =
+                protocol::parse_channel_opened_message(&msg_json, channel)?
+            {
+                return Ok(opened_channel);
+            }
+            self.pending_messages.push_back(msg_json);
+        }
     }
 
     fn keep_alive(&mut self) -> Result<(), StreamerError> {
         if self
             .last_keepalive_at
-            .map(|last_keepalive_at| last_keepalive_at.elapsed() < KEEPALIVE_INTERVAL)
-            .unwrap_or(false)
+            .is_some_and(|last_keepalive_at| last_keepalive_at.elapsed() < KEEPALIVE_INTERVAL)
         {
             return Ok(());
         }
@@ -232,7 +330,9 @@ impl Transport {
         &mut self,
         blocking: bool,
     ) -> Result<Option<tungstenite::Message>, StreamerError> {
-        // see https://github.com/snapview/tungstenite-rs/issues/103
+        // tungstenite does not provide a connection-level switch for nonblocking reads. Set the
+        // mode on the underlying TCP stream before each read instead.
+        // https://github.com/snapview/tungstenite-rs/issues/103
         socket_tcp_stream_mut(self.socket.get_mut()).set_nonblocking(!blocking)?;
 
         match self.socket.read() {
@@ -280,14 +380,15 @@ fn accumulate_feed_data(
     subscription_fields: &HashMap<String, Vec<String>>,
     new_subscription_data: &mut HashMap<String, SubscriptionData>,
     msg_json: &str,
-) -> Result<bool, StreamerError> {
-    // In COMPACT mode dxlink sends `data` as `[event_type, flat_field_values...]`. We keep the
-    // caller-provided field list per subscription and chunk the flat value sequence back into rows
-    // when iterating fields later.
-    let mut feed_data = if let Some(data) = protocol::parse_compact_feed_data(msg_json)? {
-        data
-    } else {
-        return Ok(false);
+) -> Result<(), StreamerError> {
+    // COMPACT frames omit field names and contain `[event_type, flat_field_values...]`. Keep the
+    // requested field order with the values so SubscriptionData can reconstruct each event row.
+    let mut feed_data = match protocol::parse_feed_message(msg_json)? {
+        protocol::FeedMessage::Data(data) => data,
+        protocol::FeedMessage::Error { error, message } => {
+            return Err(StreamerError::Server { error, message });
+        }
+        protocol::FeedMessage::Other => return Ok(()),
     };
 
     let subscription_fields = subscription_fields
@@ -303,7 +404,7 @@ fn accumulate_feed_data(
         .data_seq
         .append(&mut feed_data.data_seq);
 
-    Ok(true)
+    Ok(())
 }
 
 pub struct SubscriptionData {
@@ -345,6 +446,7 @@ pub enum StreamerError {
     Disconnected,
     ReadMessage,
     ResponseParse(String),
+    Server { error: String, message: String },
     Json(serde_json::Error),
     Url(url::ParseError),
     WebSocket(tungstenite::Error),
@@ -366,6 +468,7 @@ impl fmt::Display for StreamerError {
             Self::Disconnected => write!(f, "The streamer connection was closed"),
             Self::ReadMessage => write!(f, "Failed to read message"),
             Self::ResponseParse(field) => write!(f, "Response could not be parsed: {}", field),
+            Self::Server { error, message } => write!(f, "Streamer {error}: {message}"),
             Self::Json(e) => write!(f, "{}", e),
             Self::Url(e) => write!(f, "{}", e),
             Self::WebSocket(e) => write!(f, "{}", e),
@@ -582,6 +685,8 @@ impl TryFrom<&str> for CandleStreamKey {
     type Error = CandleStreamKeyParseError;
 
     fn try_from(event_symbol: &str) -> Result<Self, Self::Error> {
+        // A candle eventSymbol includes its period and optional attributes, for example
+        // `SPY{=5m,tho=true,a=m}`. fromTime is not part of the stream identity.
         let Some((symbol, candle_spec)) = event_symbol.split_once("{=") else {
             return Err(CandleStreamKeyParseError);
         };
@@ -667,7 +772,6 @@ mod protocol {
 
     const CONTROL_CHANNEL: i32 = 0;
     const FEED_SERVICE: &str = "FEED";
-    const FEED_CONTRACT: &str = "AUTO";
     const KEEPALIVE_TIMEOUT_SECS: i32 = 60;
     const MAX_SEND_SUBSCRIPTION_BYTE_SIZE: usize = 8192;
     const VERSION: &str = "0.1-DXF-JS/0.3.0";
@@ -685,16 +789,18 @@ mod protocol {
 
     #[derive(Debug, Deserialize)]
     struct ChannelOpenedMessage {
-        #[serde(rename = "type")]
-        message_type: String,
         channel: i32,
     }
 
     #[derive(Debug, Deserialize)]
-    struct FeedDataMessage {
-        #[serde(rename = "type")]
-        message_type: String,
-        data: Vec<Value>,
+    #[serde(tag = "type")]
+    enum IncomingFeedMessage {
+        #[serde(rename = "FEED_DATA")]
+        Data { data: Vec<Value> },
+        #[serde(rename = "ERROR")]
+        Error { error: String, message: String },
+        #[serde(other)]
+        Other,
     }
 
     #[derive(Debug, Serialize)]
@@ -704,6 +810,21 @@ mod protocol {
         symbol: &'a str,
         #[serde(rename = "fromTime", skip_serializing_if = "Option::is_none")]
         from_time: Option<i64>,
+    }
+
+    #[derive(Clone, Copy)]
+    pub(super) enum SubscriptionAction {
+        Add,
+        Remove,
+    }
+
+    impl SubscriptionAction {
+        fn name(self) -> &'static str {
+            match self {
+                Self::Add => "add",
+                Self::Remove => "remove",
+            }
+        }
     }
 
     #[derive(Debug)]
@@ -771,6 +892,12 @@ mod protocol {
         pub(super) data_seq: Vec<Value>,
     }
 
+    pub(super) enum FeedMessage {
+        Data(CompactFeedData),
+        Error { error: String, message: String },
+        Other,
+    }
+
     pub(super) fn setup_message() -> Value {
         json!({
             "type": "SETUP",
@@ -789,13 +916,13 @@ mod protocol {
         })
     }
 
-    pub(super) fn feed_channel_request_message(channel: i32) -> Value {
+    pub(super) fn feed_channel_request_message(channel: i32, contract: &str) -> Value {
         json!({
             "type": "CHANNEL_REQUEST",
             "channel": channel,
             "service": FEED_SERVICE,
             "parameters": {
-                "contract": FEED_CONTRACT,
+                "contract": contract,
             },
         })
     }
@@ -816,54 +943,64 @@ mod protocol {
         channel: i32,
         event_type: &str,
         symbols: &[String],
+        action: SubscriptionAction,
     ) -> Vec<String> {
         feed_subscription_messages(
             channel,
             symbols
                 .iter()
                 .map(|symbol| serialize_subscription_entry(event_type, symbol, None)),
+            action,
         )
     }
 
     pub(super) fn feed_candle_subscription_messages(
         channel: i32,
         subscriptions: &[CandleSubscription],
+        action: SubscriptionAction,
     ) -> Vec<String> {
-        let entries = subscriptions.iter().map(|subscription| {
-            serialize_subscription_entry(
-                "Candle",
-                &subscription.feed_symbol(),
-                Some(subscription.from_time),
-            )
-        });
-
-        feed_subscription_messages(channel, entries)
+        // The history service permits only one candle subscription in each request. This limit is
+        // independent of the general dxLink message-size limit used for ticker subscriptions.
+        subscriptions
+            .iter()
+            .map(|subscription| {
+                feed_subscription_message(
+                    channel,
+                    &[serialize_subscription_entry(
+                        "Candle",
+                        &subscription.feed_symbol(),
+                        Some(subscription.from_time),
+                    )],
+                    action,
+                )
+            })
+            .collect()
     }
 
     fn feed_subscription_messages(
         channel: i32,
         entries: impl IntoIterator<Item = String>,
+        action: SubscriptionAction,
     ) -> Vec<String> {
         let mut messages = vec![];
-        let mut add = vec![];
-        let mut size = feed_subscription_message(channel, &[]).len();
+        let mut batch = vec![];
+        let mut size = feed_subscription_message(channel, &[], action).len();
 
         for entry in entries {
-            // Every entry after the first adds one extra byte for the separating comma in `add:[...]`.
-            let entry_size = entry.len() + usize::from(!add.is_empty());
+            let entry_size = entry.len() + usize::from(!batch.is_empty());
 
-            if size + entry_size > MAX_SEND_SUBSCRIPTION_BYTE_SIZE && !add.is_empty() {
-                messages.push(feed_subscription_message(channel, &add));
-                add.clear();
-                size = feed_subscription_message(channel, &[]).len();
+            if size + entry_size > MAX_SEND_SUBSCRIPTION_BYTE_SIZE && !batch.is_empty() {
+                messages.push(feed_subscription_message(channel, &batch, action));
+                batch.clear();
+                size = feed_subscription_message(channel, &[], action).len();
             }
 
             size += entry_size;
-            add.push(entry);
+            batch.push(entry);
         }
 
-        if !add.is_empty() {
-            messages.push(feed_subscription_message(channel, &add));
+        if !batch.is_empty() {
+            messages.push(feed_subscription_message(channel, &batch, action));
         }
 
         messages
@@ -889,45 +1026,70 @@ mod protocol {
         })
     }
 
-    pub(super) fn parse_channel_opened_message(msg_json: &str) -> Result<i32, StreamerError> {
-        match serde_json::from_str::<ChannelOpenedMessage>(msg_json) {
-            Ok(response) if response.message_type == "CHANNEL_OPENED" => Ok(response.channel),
-            _ => Err(StreamerError::ResponseParse("CHANNEL_OPENED".to_string())),
+    pub(super) fn parse_channel_opened_message(
+        msg_json: &str,
+        requested_channel: i32,
+    ) -> Result<Option<i32>, StreamerError> {
+        let message = serde_json::from_str::<Message>(msg_json)?;
+        if message.message_type == "ERROR" {
+            let IncomingFeedMessage::Error { error, message } =
+                serde_json::from_str::<IncomingFeedMessage>(msg_json)?
+            else {
+                unreachable!("message type was already parsed as ERROR");
+            };
+            return Err(StreamerError::Server { error, message });
         }
+        if message.message_type != "CHANNEL_OPENED" {
+            return Ok(None);
+        }
+
+        let response = serde_json::from_str::<ChannelOpenedMessage>(msg_json)?;
+        if response.channel != requested_channel {
+            return Err(StreamerError::ResponseParse(format!(
+                "CHANNEL_OPENED channel {}, expected {}",
+                response.channel, requested_channel
+            )));
+        }
+        Ok(Some(response.channel))
     }
 
-    pub(super) fn parse_compact_feed_data(
-        msg_json: &str,
-    ) -> Result<Option<CompactFeedData>, StreamerError> {
-        let mut feed_data = match serde_json::from_str::<FeedDataMessage>(msg_json) {
-            Ok(feed_data) if feed_data.message_type == "FEED_DATA" => feed_data,
-            _ => return Ok(None),
+    pub(super) fn parse_feed_message(msg_json: &str) -> Result<FeedMessage, StreamerError> {
+        let mut data = match serde_json::from_str::<IncomingFeedMessage>(msg_json)? {
+            IncomingFeedMessage::Data { data } => data,
+            IncomingFeedMessage::Error { error, message } => {
+                return Ok(FeedMessage::Error { error, message });
+            }
+            IncomingFeedMessage::Other => return Ok(FeedMessage::Other),
         };
 
-        let name = feed_data
-            .data
+        let name = data
             .first()
             .and_then(|name| name.as_str())
             .map(String::from)
             .ok_or_else(|| StreamerError::ResponseParse("name".to_string()))?;
-        let data_seq = feed_data
-            .data
+        let data_seq = data
             .get_mut(1)
-            .and_then(|seq| seq.as_array_mut())
+            .and_then(Value::as_array_mut)
             .ok_or_else(|| StreamerError::ResponseParse("data seq".to_string()))?;
 
-        Ok(Some(CompactFeedData {
+        Ok(FeedMessage::Data(CompactFeedData {
             name,
             data_seq: std::mem::take(data_seq),
         }))
     }
 
-    fn feed_subscription_message(channel: i32, add: &[String]) -> String {
+    // Subscription entries are pre-serialized because batching uses their exact wire size.
+    fn feed_subscription_message(
+        channel: i32,
+        entries: &[String],
+        action: SubscriptionAction,
+    ) -> String {
         let mut message = format!(
-            r#"{{"type":"FEED_SUBSCRIPTION","channel":{},"add":["#,
-            channel
+            r#"{{"type":"FEED_SUBSCRIPTION","channel":{},"{}":["#,
+            channel,
+            action.name(),
         );
-        for (i, entry) in add.iter().enumerate() {
+        for (i, entry) in entries.iter().enumerate() {
             if i > 0 {
                 message.push(',');
             }
@@ -960,6 +1122,20 @@ mod protocol {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_streamer_error_messages_are_reported() {
+        let message = r#"{"type":"ERROR","channel":1,"error":"BAD_ACTION","message":"Your subscription rate is too high"}"#;
+        let feed_error =
+            accumulate_feed_data(&HashMap::new(), &mut HashMap::new(), message).unwrap_err();
+        let channel_error = protocol::parse_channel_opened_message(message, 1).unwrap_err();
+
+        assert_eq!(
+            feed_error.to_string(),
+            "Streamer BAD_ACTION: Your subscription rate is too high"
+        );
+        assert_eq!(channel_error.to_string(), feed_error.to_string());
+    }
 
     #[test]
     fn test_feed_setup_message_uses_compact_event_fields() {
@@ -1019,6 +1195,7 @@ mod tests {
             3,
             "Quote",
             &[large_symbol.clone(), large_symbol],
+            protocol::SubscriptionAction::Add,
         );
 
         assert_eq!(messages.len(), 2);
@@ -1030,6 +1207,28 @@ mod tests {
     }
 
     #[test]
+    fn test_feed_subscription_messages_support_remove() {
+        let messages = protocol::feed_symbol_subscription_messages(
+            1,
+            "Greeks",
+            &[".SPY260821C600".to_string()],
+            protocol::SubscriptionAction::Remove,
+        );
+
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).unwrap(),
+            json!({
+                "type": "FEED_SUBSCRIPTION",
+                "channel": 1,
+                "remove": [{
+                    "type": "Greeks",
+                    "symbol": ".SPY260821C600",
+                }],
+            })
+        );
+    }
+
+    #[test]
     fn test_feed_subscription_messages_serialize_candle_from_time_and_symbol() {
         let subscriptions =
             [
@@ -1037,7 +1236,11 @@ mod tests {
                     .with_extended_trading_hours(true)
                     .with_price(CandlePrice::Mark),
             ];
-        let messages = protocol::feed_candle_subscription_messages(1, &subscriptions);
+        let messages = protocol::feed_candle_subscription_messages(
+            1,
+            &subscriptions,
+            protocol::SubscriptionAction::Add,
+        );
 
         assert_eq!(messages.len(), 1);
         assert_eq!(
@@ -1051,6 +1254,36 @@ mod tests {
                     "fromTime": 1_775_192_400_000_i64,
                 }],
             })
+        );
+    }
+
+    #[test]
+    fn test_candle_subscriptions_are_sent_individually() {
+        let subscriptions = [
+            CandleSubscription::new("SPY", CandlePeriod::minutes(5), 1),
+            CandleSubscription::new("QQQ", CandlePeriod::minutes(5), 1),
+        ];
+
+        let messages = protocol::feed_candle_subscription_messages(
+            1,
+            &subscriptions,
+            protocol::SubscriptionAction::Add,
+        );
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).unwrap()["add"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[1]).unwrap()["add"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
         );
     }
 
@@ -1082,7 +1315,41 @@ mod tests {
     }
 
     #[test]
-    fn test_poll_subscriptions_reports_disconnect() {
+    fn test_subscription_changes_report_not_connected() {
+        let mut client = Client {
+            base_url: "ws://unused".to_string(),
+            token: "test-token".to_string(),
+            transport: None,
+            ticker_channel: None,
+            history_channel: None,
+            subscription_fields: HashMap::new(),
+            pending_messages: VecDeque::new(),
+            last_keepalive_at: None,
+        };
+        let fields = ["eventSymbol".to_string()];
+        let symbols = ["SPY".to_string()];
+        let candles = [CandleSubscription::new("SPY", CandlePeriod::minutes(5), 1)];
+
+        assert!(matches!(
+            client.add_symbol_subscriptions(SymbolSubscriptionKind::Quote, &fields, &symbols),
+            Err(StreamerError::NotConnected)
+        ));
+        assert!(matches!(
+            client.remove_symbol_subscriptions(SymbolSubscriptionKind::Quote, &symbols),
+            Err(StreamerError::NotConnected)
+        ));
+        assert!(matches!(
+            client.add_candle_subscriptions(&fields, &candles),
+            Err(StreamerError::NotConnected)
+        ));
+        assert!(matches!(
+            client.remove_candle_subscriptions(&candles),
+            Err(StreamerError::NotConnected)
+        ));
+    }
+
+    #[test]
+    fn test_channels_open_lazily_and_poll_reports_disconnect() {
         use std::net::TcpListener;
         use std::thread;
 
@@ -1114,6 +1381,33 @@ mod tests {
                 &mut socket,
                 r#"{"type":"AUTH_STATE","channel":0,"state":"AUTHORIZED"}"#,
             );
+            let ticker_request = read_text_message(&mut socket);
+            assert!(ticker_request.contains("\"contract\":\"TICKER\""));
+            send_text_message(
+                &mut socket,
+                r#"{"type":"CHANNEL_OPENED","channel":1,"service":"FEED","version":1}"#,
+            );
+            let feed_setup = read_text_message(&mut socket);
+            assert!(feed_setup.contains("\"type\":\"FEED_SETUP\""));
+            let subscription = read_text_message(&mut socket);
+            assert!(subscription.contains("\"type\":\"FEED_SUBSCRIPTION\""));
+
+            let history_request = read_text_message(&mut socket);
+            assert!(history_request.contains("\"contract\":\"HISTORY\""));
+            send_text_message(
+                &mut socket,
+                r#"{"type":"FEED_DATA","channel":1,"data":["Quote",["SPY"]]}"#,
+            );
+            send_text_message(
+                &mut socket,
+                r#"{"type":"CHANNEL_OPENED","channel":3,"service":"FEED","version":1}"#,
+            );
+            let feed_setup = read_text_message(&mut socket);
+            assert!(feed_setup.contains("\"type\":\"FEED_SETUP\""));
+            let subscription = read_text_message(&mut socket);
+            assert!(subscription.contains("\"type\":\"FEED_SUBSCRIPTION\""));
+
+            std::thread::sleep(Duration::from_millis(50));
             socket.close(None).unwrap();
         });
 
@@ -1121,13 +1415,44 @@ mod tests {
             base_url,
             token: "test-token".to_string(),
             transport: None,
-            feed_channel: None,
+            ticker_channel: None,
+            history_channel: None,
             subscription_fields: HashMap::new(),
+            pending_messages: VecDeque::new(),
             last_keepalive_at: None,
         };
         client.connect().unwrap();
-        std::thread::sleep(Duration::from_millis(20));
+        assert!(client.ticker_channel.is_none());
+        assert!(client.history_channel.is_none());
 
+        client
+            .add_symbol_subscriptions(
+                SymbolSubscriptionKind::Quote,
+                &["eventSymbol".to_string()],
+                &["SPY".to_string()],
+            )
+            .unwrap();
+        assert_eq!(client.ticker_channel, Some(1));
+        assert!(client.history_channel.is_none());
+
+        client
+            .add_candle_subscriptions(
+                &["eventSymbol".to_string()],
+                &[CandleSubscription::new("SPY", CandlePeriod::minutes(5), 1)],
+            )
+            .unwrap();
+        assert_eq!(client.history_channel, Some(3));
+
+        let data = client.poll_subscriptions().unwrap();
+        assert_eq!(
+            data["Quote"]
+                .iter_field("eventSymbol")
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![json!("SPY")]
+        );
+
+        std::thread::sleep(Duration::from_millis(70));
         let err = match client.poll_subscriptions() {
             Ok(_) => panic!("expected disconnect error"),
             Err(err) => err,
@@ -1150,14 +1475,12 @@ mod tests {
         )]);
         let mut new_subscription_data = HashMap::new();
 
-        let consumed = accumulate_feed_data(
+        accumulate_feed_data(
             &subscription_fields,
             &mut new_subscription_data,
             r#"{"type":"FEED_DATA","channel":1,"data":["Quote",["SPY",600.1,600.2,"QQQ",499.1,499.2]]}"#,
         )
         .unwrap();
-
-        assert!(consumed);
 
         let quote_data = new_subscription_data.get("Quote").unwrap();
         let event_symbols = quote_data
