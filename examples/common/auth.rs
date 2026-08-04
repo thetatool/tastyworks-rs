@@ -7,10 +7,10 @@ use std::io::{Write, stdin, stdout};
 const SESSION_KEY_ENV_VAR: &str = "TASTYWORKS_SESSION_KEY";
 
 pub async fn session_from_env_or_login(_example_name: &str) -> Result<Session, Box<dyn Error>> {
-    if let Ok(session_key) = env::var(SESSION_KEY_ENV_VAR) {
-        if !session_key.is_empty() {
-            return Ok(Session::from_token(session_key));
-        }
+    if let Ok(session_key) = env::var(SESSION_KEY_ENV_VAR)
+        && !session_key.is_empty()
+    {
+        return Ok(Session::from_token(session_key));
     }
 
     login().await

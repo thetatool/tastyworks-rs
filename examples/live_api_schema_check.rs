@@ -251,10 +251,10 @@ async fn run_streamer_smoke_test(
     let deadline = Instant::now() + STREAMER_TIMEOUT;
     while Instant::now() < deadline {
         let subscriptions = client.poll_subscriptions()?;
-        if let Some(quote_data) = subscriptions.get("Quote") {
-            if quote_data.iter_field("eventSymbol").next().is_some() {
-                return Ok(true);
-            }
+        if let Some(quote_data) = subscriptions.get("Quote")
+            && quote_data.iter_field("eventSymbol").next().is_some()
+        {
+            return Ok(true);
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
